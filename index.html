@@ -1,0 +1,993 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Plants vs Zombies - v1.0</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      background: #2e1a0f;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    #gameCanvas {
+      border: 4px solid #5d4037;
+      border-radius: 8px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+      cursor: crosshair;
+    }
+
+    #ui {
+      margin-top: 10px;
+      color: #fff;
+      text-align: center;
+    }
+
+    #ui h1 {
+      font-size: 1.2rem;
+      margin-bottom: 5px;
+    }
+
+    #ui p {
+      font-size: 0.9rem;
+      color: #ccc;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="gameCanvas" width="1000" height="650"></canvas>
+  <div id="ui">
+    <h1>Plants vs Zombies v1.0</h1>
+    <p>Click seed packet, then click grid to place | Peashooters shoot automatically | Zombies spawn from the right</p>
+  </div>
+
+  <!-- CONFIG -->
+  <script>
+    const GRID_CONFIG = {
+      LANES: 5,
+      COLUMNS: 9,
+      CELL_WIDTH: 80,
+      CELL_HEIGHT: 100,
+      OFFSET_X: 250,
+      OFFSET_Y: 120
+    };
+
+    const PLANT_TYPES = {
+      PEASHOOTER: {
+        id: 'peashooter',
+        name: 'Peashooter',
+        health: 300,
+        cooldown: 1400,
+        projectile: 'PEA',
+        color: '#4caf50',
+        radius: 25,
+        width: 50,
+        height: 60
+      }
+    };
+
+    const ZOMBIE_TYPES = {
+      BASIC: {
+        id: 'basic',
+        name: 'Basic Zombie',
+        health: 200,
+        speed: 30,
+        damage: 100,
+        eatCooldown: 1000,
+        color: '#8bc34a',
+        width: 40,
+        height: 70
+      }
+    };
+
+    const PROJECTILE_TYPES = {
+      PEA: {
+        id: 'pea',
+        speed: 400,
+        damage: 20,
+        radius: 8,
+        color: '#76ff03'
+      }
+    };
+
+    const ZOMBIE_STATES = {
+      WALKING: 'walking',
+      EATING: 'eating',
+      DYING: 'dying'
+    };
+  </script>
+
+  <!-- UTILS -->
+  <script>
+    function gridToPixel(gridX, gridY) {
+      return {
+        x: GRID_CONFIG.OFFSET_X + gridX * GRID_CONFIG.CELL_WIDTH + GRID_CONFIG.CELL_WIDTH / 2,
+        y: GRID_CONFIG.OFFSET_Y + gridY * GRID_CONFIG.CELL_HEIGHT + GRID_CONFIG.CELL_HEIGHT / 2
+      };
+    }
+
+    function pixelToGrid(pixelX, pixelY) {
+      const gridX = Math.floor((pixelX - GRID_CONFIG.OFFSET_X) / GRID_CONFIG.CELL_WIDTH);
+      const gridY = Math.floor((pixelY - GRID_CONFIG.OFFSET_Y) / GRID_CONFIG.CELL_HEIGHT);
+      
+      if (gridX < 0 || gridX >= GRID_CONFIG.COLUMNS || 
+          gridY < 0 || gridY >= GRID_CONFIG.LANES) {
+        return null;
+      }
+      
+      return { x: gridX, y: gridY };
+    }
+
+    function getLaneFromY(pixelY) {
+      const lane = Math.floor((pixelY - GRID_CONFIG.OFFSET_Y) / GRID_CONFIG.CELL_HEIGHT);
+      return (lane >= 0 && lane < GRID_CONFIG.LANES) ? lane : null;
+    }
+
+    function canPlacePlant(gridX, gridY, grid) {
+      if (gridX < 0 || gridX >= GRID_CONFIG.COLUMNS ||
+          gridY < 0 || gridY >= GRID_CONFIG.LANES) {
+        return false;
+      }
+      return grid[gridY][gridX] === null;
+    }
+  </script>
+
+  <!-- ENTITY MANAGER -->
+  <script>
+    const EntityManager = {
+      entities: new Map(),
+      plants: new Set(),
+      zombies: new Set(),
+      projectiles: new Set(),
+      nextId: 1,
+      
+      create(type) {
+        const entity = { 
+          id: this.nextId++, 
+          type, 
+          active: true 
+        };
+        this.entities.set(entity.id, entity);
+        
+        const collectionName = type + 's';
+        if (this[collectionName]) {
+          this[collectionName].add(entity);
+        }
+        
+        return entity;
+      },
+      
+      destroy(entity) {
+        if (!entity) return;
+        entity.active = false;
+        this.entities.delete(entity.id);
+        
+        const collectionName = entity.type + 's';
+        if (this[collectionName]) {
+          this[collectionName].delete(entity);
+        }
+      },
+      
+      getByType(type) {
+        const collectionName = type + 's';
+        return this[collectionName] || new Set();
+      },
+
+      clear() {
+        this.entities.clear();
+        this.plants.clear();
+        this.zombies.clear();
+        this.projectiles.clear();
+        this.nextId = 1;
+      }
+    };
+  </script>
+
+  <!-- PLANT SYSTEM -->
+  <script>
+    function createPlant(typeId, gridX, gridY, grid) {
+      const type = PLANT_TYPES[typeId];
+      if (!type) {
+        console.error('Unknown plant type:', typeId);
+        return null;
+      }
+
+      const pos = gridToPixel(gridX, gridY);
+      
+      const plant = EntityManager.create('plant');
+      
+      plant.transform = {
+        x: pos.x,
+        y: pos.y,
+        width: type.width,
+        height: type.height
+      };
+      
+      plant.health = {
+        current: type.health,
+        max: type.health
+      };
+      
+      plant.plant = {
+        type: typeId,
+        gridX: gridX,
+        gridY: gridY,
+        cooldown: type.cooldown,
+        lastShot: 0
+      };
+      
+      plant.render = {
+        color: type.color,
+        radius: type.radius,
+        shape: 'circle',
+        flashTime: 0
+      };
+      
+      grid[gridY][gridX] = plant;
+      
+      return plant;
+    }
+
+    function hasZombieInLane(lane, fromX) {
+      for (const zombie of EntityManager.getByType('zombie')) {
+        if (!zombie.active) continue;
+        if (zombie.zombie.lane === lane && zombie.transform.x > fromX) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    function updatePlants(currentTime) {
+      for (const plant of EntityManager.getByType('plant')) {
+        if (!plant.active) continue;
+        
+        // Update flash effect
+        if (plant.render.flashTime > 0) {
+          plant.render.flashTime -= 16;
+        }
+        
+        // Check if can shoot
+        if (currentTime - plant.plant.lastShot >= plant.plant.cooldown) {
+          if (hasZombieInLane(plant.plant.gridY, plant.transform.x)) {
+            shootProjectile(plant);
+            plant.plant.lastShot = currentTime;
+          }
+        }
+      }
+    }
+
+    function drawPlant(ctx, plant) {
+      if (!plant.active) return;
+      
+      const { x, y } = plant.transform;
+      const { color, radius } = plant.render;
+      
+      // Flash white if damaged
+      if (plant.render.flashTime > 0) {
+        ctx.fillStyle = '#ffffff';
+      } else {
+        ctx.fillStyle = color;
+      }
+      
+      ctx.beginPath();
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Draw a simple "face" to show it's a plant
+      ctx.fillStyle = '#1b5e20';
+      ctx.beginPath();
+      ctx.arc(x - 8, y - 5, 4, 0, Math.PI * 2);
+      ctx.arc(x + 8, y - 5, 4, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Mouth
+      ctx.strokeStyle = '#1b5e20';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(x, y + 5, 8, 0, Math.PI);
+      ctx.stroke();
+      
+      // Health bar
+      const healthPct = plant.health.current / plant.health.max;
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+      ctx.fillRect(x - 20, y - radius - 12, 40, 6);
+      ctx.fillStyle = healthPct > 0.5 ? '#4caf50' : '#f44336';
+      ctx.fillRect(x - 20, y - radius - 12, 40 * healthPct, 6);
+    }
+  </script>
+
+  <!-- PROJECTILE SYSTEM -->
+  <script>
+    function createProjectile(typeId, x, y, lane) {
+      const type = PROJECTILE_TYPES[typeId];
+      if (!type) {
+        console.error('Unknown projectile type:', typeId);
+        return null;
+      }
+      
+      const projectile = EntityManager.create('projectile');
+      
+      projectile.transform = {
+        x: x,
+        y: y,
+        width: type.radius * 2,
+        height: type.radius * 2
+      };
+      
+      projectile.projectile = {
+        type: typeId,
+        lane: lane,
+        speed: type.speed,
+        damage: type.damage
+      };
+      
+      projectile.render = {
+        color: type.color,
+        radius: type.radius,
+        shape: 'circle'
+      };
+      
+      return projectile;
+    }
+
+    function shootProjectile(plant) {
+      const type = PLANT_TYPES[plant.plant.type];
+      if (!type || !type.projectile) return;
+      
+      createProjectile(
+        type.projectile,
+        plant.transform.x + 25,
+        plant.transform.y,
+        plant.plant.gridY
+      );
+    }
+
+    function checkProjectileCollision(projectile) {
+      const lane = projectile.projectile.lane;
+      const projX = projectile.transform.x;
+      const projRadius = projectile.render.radius;
+      
+      for (const zombie of EntityManager.getByType('zombie')) {
+        if (!zombie.active) continue;
+        if (zombie.zombie.lane !== lane) continue;
+        if (zombie.zombie.state === ZOMBIE_STATES.DYING) continue;
+        
+        const zombieX = zombie.transform.x;
+        const zombieRadius = zombie.render.radius || 20;
+        
+        const distance = Math.abs(projX - zombieX);
+        if (distance < projRadius + zombieRadius) {
+          return zombie;
+        }
+      }
+      
+      return null;
+    }
+
+    function updateProjectiles(deltaTime, canvasWidth) {
+      for (const projectile of EntityManager.getByType('projectile')) {
+        if (!projectile.active) continue;
+        
+        // Move right
+        projectile.transform.x += projectile.projectile.speed * (deltaTime / 1000);
+        
+        // Check collision with zombies
+        const hitZombie = checkProjectileCollision(projectile);
+        
+        if (hitZombie) {
+          damageEntity(hitZombie, projectile.projectile.damage);
+          EntityManager.destroy(projectile);
+        }
+        // Remove if off screen
+        else if (projectile.transform.x > canvasWidth) {
+          EntityManager.destroy(projectile);
+        }
+      }
+    }
+
+    function drawProjectile(ctx, projectile) {
+      if (!projectile.active) return;
+      
+      const { x, y } = projectile.transform;
+      const { color, radius } = projectile.render;
+      
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Highlight
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+      ctx.beginPath();
+      ctx.arc(x - 2, y - 2, radius / 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  </script>
+
+  <!-- ZOMBIE SYSTEM -->
+  <script>
+    function createZombie(typeId, lane) {
+      const type = ZOMBIE_TYPES[typeId];
+      if (!type) {
+        console.error('Unknown zombie type:', typeId);
+        return null;
+      }
+
+      const startX = GRID_CONFIG.OFFSET_X + GRID_CONFIG.COLUMNS * GRID_CONFIG.CELL_WIDTH + 50;
+      const startY = GRID_CONFIG.OFFSET_Y + lane * GRID_CONFIG.CELL_HEIGHT + GRID_CONFIG.CELL_HEIGHT / 2;
+      
+      const zombie = EntityManager.create('zombie');
+      
+      zombie.transform = {
+        x: startX,
+        y: startY,
+        width: type.width,
+        height: type.height
+      };
+      
+      zombie.health = {
+        current: type.health,
+        max: type.health
+      };
+      
+      zombie.zombie = {
+        type: typeId,
+        lane: lane,
+        state: ZOMBIE_STATES.WALKING,
+        speed: type.speed,
+        damage: type.damage,
+        eatCooldown: type.eatCooldown,
+        lastBite: 0,
+        targetPlant: null,
+        deathTime: 0
+      };
+      
+      zombie.render = {
+        color: type.color,
+        radius: 20,
+        shape: 'rect',
+        flashTime: 0
+      };
+      
+      return zombie;
+    }
+
+    function getPlantInFront(zombie, grid) {
+      const lane = zombie.zombie.lane;
+      const zombieX = zombie.transform.x;
+      
+      const col = Math.floor((zombieX - GRID_CONFIG.OFFSET_X) / GRID_CONFIG.CELL_WIDTH);
+      
+      if (col >= 0 && col < GRID_CONFIG.COLUMNS) {
+        const plant = grid[lane][col];
+        if (plant && plant.active) {
+          const plantPos = gridToPixel(col, lane);
+          const distance = Math.abs(zombieX - plantPos.x);
+          if (distance < 30) {
+            return plant;
+          }
+        }
+      }
+      
+      return null;
+    }
+
+    function updateZombieWalking(zombie, deltaTime, currentTime, grid, onGameOver) {
+      const plant = getPlantInFront(zombie, grid);
+      
+      if (plant) {
+        zombie.zombie.state = ZOMBIE_STATES.EATING;
+        zombie.zombie.targetPlant = plant;
+        zombie.zombie.lastBite = currentTime;
+      } else {
+        zombie.transform.x -= zombie.zombie.speed * (deltaTime / 1000);
+        
+        if (zombie.transform.x < GRID_CONFIG.OFFSET_X - 50) {
+          onGameOver();
+        }
+      }
+    }
+
+    function updateZombieEating(zombie, currentTime) {
+      const plant = zombie.zombie.targetPlant;
+      
+      if (!plant || !plant.active) {
+        zombie.zombie.state = ZOMBIE_STATES.WALKING;
+        zombie.zombie.targetPlant = null;
+        return;
+      }
+      
+      if (currentTime - zombie.zombie.lastBite >= zombie.zombie.eatCooldown) {
+        damageEntity(plant, zombie.zombie.damage);
+        zombie.zombie.lastBite = currentTime;
+      }
+    }
+
+    function updateZombieDying(zombie, currentTime) {
+      const elapsed = currentTime - zombie.zombie.deathTime;
+      const duration = 500;
+      
+      if (elapsed >= duration) {
+        EntityManager.destroy(zombie);
+      } else {
+        const progress = elapsed / duration;
+        zombie.render.radius = 20 * (1 - progress);
+      }
+    }
+
+    function updateZombies(deltaTime, currentTime, grid, onGameOver) {
+      for (const zombie of EntityManager.getByType('zombie')) {
+        if (!zombie.active) continue;
+        
+        // Update flash effect
+        if (zombie.render.flashTime > 0) {
+          zombie.render.flashTime -= deltaTime;
+        }
+        
+        switch (zombie.zombie.state) {
+          case ZOMBIE_STATES.WALKING:
+            updateZombieWalking(zombie, deltaTime, currentTime, grid, onGameOver);
+            break;
+          case ZOMBIE_STATES.EATING:
+            updateZombieEating(zombie, currentTime);
+            break;
+          case ZOMBIE_STATES.DYING:
+            updateZombieDying(zombie, currentTime);
+            break;
+        }
+      }
+    }
+
+    function drawZombie(ctx, zombie) {
+      if (!zombie.active) return;
+      
+      const { x, y } = zombie.transform;
+      const { color } = zombie.render;
+      
+      // Flash white if damaged
+      if (zombie.render.flashTime > 0) {
+        ctx.fillStyle = '#ffffff';
+      } else {
+        ctx.fillStyle = color;
+      }
+      
+      // Body
+      ctx.fillRect(x - 20, y - 35, 40, 70);
+      
+      // Suit details
+      ctx.fillStyle = zombie.render.flashTime > 0 ? '#ffffff' : '#424242';
+      ctx.fillRect(x - 20, y + 10, 40, 25);
+      
+      // Tie
+      ctx.fillStyle = zombie.render.flashTime > 0 ? '#ffffff' : '#d32f2f';
+      ctx.fillRect(x - 5, y + 10, 10, 20);
+      
+      // Eyes (looking left)
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(x - 15, y - 20, 10, 10);
+      ctx.fillRect(x - 15, y, 10, 10);
+      ctx.fillStyle = '#000';
+      ctx.fillRect(x - 13, y - 18, 4, 4);
+      ctx.fillRect(x - 13, y + 2, 4, 4);
+      
+      // Health bar
+      const healthPct = zombie.health.current / zombie.health.max;
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+      ctx.fillRect(x - 20, y - 45, 40, 6);
+      ctx.fillStyle = healthPct > 0.5 ? '#4caf50' : '#f44336';
+      ctx.fillRect(x - 20, y - 45, 40 * healthPct, 6);
+    }
+  </script>
+
+  <!-- COMBAT SYSTEM -->
+  <script>
+    function damageEntity(entity, amount) {
+      if (!entity || !entity.active) return;
+      
+      entity.health.current -= amount;
+      
+      // Visual flash
+      if (entity.render) {
+        entity.render.flashTime = 100; // ms
+      }
+      
+      if (entity.health.current <= 0) {
+        killEntity(entity);
+      }
+    }
+
+    function killEntity(entity) {
+      if (!entity) return;
+      
+      if (entity.type === 'zombie') {
+        entity.zombie.state = ZOMBIE_STATES.DYING;
+        entity.zombie.deathTime = performance.now();
+      } else if (entity.type === 'plant') {
+        // Clear from grid
+        const gridY = entity.plant.gridY;
+        const gridX = entity.plant.gridX;
+        
+        // We need access to grid - this will be handled by checking in the game loop
+        EntityManager.destroy(entity);
+      }
+    }
+  </script>
+
+  <!-- SPAWNER -->
+  <script>
+    const Spawner = {
+      spawnInterval: 4000,
+      lastSpawn: 0,
+      
+      update(currentTime) {
+        if (currentTime - this.lastSpawn >= this.spawnInterval) {
+          this.spawnZombie();
+          this.lastSpawn = currentTime;
+        }
+      },
+      
+      spawnZombie() {
+        const lane = Math.floor(Math.random() * GRID_CONFIG.LANES);
+        createZombie('BASIC', lane);
+      },
+
+      reset() {
+        this.lastSpawn = 0;
+      }
+    };
+  </script>
+
+  <!-- INPUT HANDLER -->
+  <script>
+    const InputHandler = {
+      selectedPlant: null,
+      mouseX: 0,
+      mouseY: 0,
+      seedPacketBounds: { x: 20, y: 20, width: 80, height: 100 },
+      
+      init(canvas) {
+        this.canvas = canvas;
+        canvas.addEventListener('click', (e) => this.handleClick(e));
+        canvas.addEventListener('mousemove', (e) => this.handleMouseMove(e));
+      },
+      
+      handleClick(e) {
+        const rect = this.canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        
+        // Check if clicking seed packet
+        if (this.isInSeedPacket(x, y)) {
+          this.selectedPlant = 'PEASHOOTER';
+          return;
+        }
+        
+        // Try to place plant
+        if (this.selectedPlant) {
+          const gridPos = pixelToGrid(x, y);
+          if (gridPos && canPlacePlant(gridPos.x, gridPos.y, Game.grid)) {
+            createPlant(this.selectedPlant, gridPos.x, gridPos.y, Game.grid);
+          }
+        }
+      },
+      
+      handleMouseMove(e) {
+        const rect = this.canvas.getBoundingClientRect();
+        this.mouseX = e.clientX - rect.left;
+        this.mouseY = e.clientY - rect.top;
+      },
+
+      isInSeedPacket(x, y) {
+        const b = this.seedPacketBounds;
+        return x >= b.x && x <= b.x + b.width &&
+               y >= b.y && y <= b.y + b.height;
+      },
+
+      getMouseGridPos() {
+        return pixelToGrid(this.mouseX, this.mouseY);
+      }
+    };
+  </script>
+
+  <!-- RENDERER -->
+  <script>
+    function drawBackground(ctx) {
+      // Sky
+      ctx.fillStyle = '#87ceeb';
+      ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+      
+      // Grass lawn
+      ctx.fillStyle = '#7cb342';
+      ctx.fillRect(
+        GRID_CONFIG.OFFSET_X,
+        GRID_CONFIG.OFFSET_Y,
+        GRID_CONFIG.COLUMNS * GRID_CONFIG.CELL_WIDTH,
+        GRID_CONFIG.LANES * GRID_CONFIG.CELL_HEIGHT
+      );
+      
+      // Grid lines
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
+      ctx.lineWidth = 1;
+      
+      // Vertical lines
+      for (let i = 0; i <= GRID_CONFIG.COLUMNS; i++) {
+        const x = GRID_CONFIG.OFFSET_X + i * GRID_CONFIG.CELL_WIDTH;
+        ctx.beginPath();
+        ctx.moveTo(x, GRID_CONFIG.OFFSET_Y);
+        ctx.lineTo(x, GRID_CONFIG.OFFSET_Y + GRID_CONFIG.LANES * GRID_CONFIG.CELL_HEIGHT);
+        ctx.stroke();
+      }
+      
+      // Horizontal lines
+      for (let i = 0; i <= GRID_CONFIG.LANES; i++) {
+        const y = GRID_CONFIG.OFFSET_Y + i * GRID_CONFIG.CELL_HEIGHT;
+        ctx.beginPath();
+        ctx.moveTo(GRID_CONFIG.OFFSET_X, y);
+        ctx.lineTo(GRID_CONFIG.OFFSET_X + GRID_CONFIG.COLUMNS * GRID_CONFIG.CELL_WIDTH, y);
+        ctx.stroke();
+      }
+      
+      // House area (left of grid)
+      ctx.fillStyle = '#5d4037';
+      ctx.fillRect(0, GRID_CONFIG.OFFSET_Y, GRID_CONFIG.OFFSET_X - 10, GRID_CONFIG.LANES * GRID_CONFIG.CELL_HEIGHT);
+      
+      // House detail
+      ctx.fillStyle = '#8d6e63';
+      for (let i = 0; i < GRID_CONFIG.LANES; i++) {
+        const y = GRID_CONFIG.OFFSET_Y + i * GRID_CONFIG.CELL_HEIGHT + 20;
+        ctx.fillRect(20, y, 60, 60);
+      }
+    }
+
+    function drawSeedPacket(ctx, selected) {
+      const b = InputHandler.seedPacketBounds;
+      
+      // Packet background
+      ctx.fillStyle = selected ? '#ffeb3b' : '#8d6e63';
+      ctx.fillRect(b.x, b.y, b.width, b.height);
+      
+      // Border
+      ctx.strokeStyle = selected ? '#ff6f00' : '#5d4037';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(b.x, b.y, b.width, b.height);
+      
+      // Plant icon (simple circle)
+      ctx.fillStyle = '#4caf50';
+      ctx.beginPath();
+      ctx.arc(b.x + b.width / 2, b.y + 40, 20, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Label
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 12px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('PEA', b.x + b.width / 2, b.y + 80);
+      
+      // Cost (free for v1.0)
+      ctx.fillStyle = '#ffeb3b';
+      ctx.font = 'bold 14px sans-serif';
+      ctx.fillText('FREE', b.x + b.width / 2, b.y + 95);
+    }
+
+    function drawPlacementGhost(ctx, mouseX, mouseY, selectedPlant, grid) {
+      if (!selectedPlant) return;
+      
+      const gridPos = pixelToGrid(mouseX, mouseY);
+      if (!gridPos) return;
+      
+      const pos = gridToPixel(gridPos.x, gridPos.y);
+      const valid = canPlacePlant(gridPos.x, gridPos.y, grid);
+      
+      ctx.globalAlpha = 0.5;
+      ctx.fillStyle = valid ? '#4caf50' : '#f44336';
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, 25, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1.0;
+      
+      // Highlight cell
+      ctx.strokeStyle = valid ? '#4caf50' : '#f44336';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(
+        GRID_CONFIG.OFFSET_X + gridPos.x * GRID_CONFIG.CELL_WIDTH,
+        GRID_CONFIG.OFFSET_Y + gridPos.y * GRID_CONFIG.CELL_HEIGHT,
+        GRID_CONFIG.CELL_WIDTH,
+        GRID_CONFIG.CELL_HEIGHT
+      );
+    }
+
+    function drawGameOver(ctx, won) {
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+      ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+      
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 48px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      
+      if (won) {
+        ctx.fillText('VICTORY!', ctx.canvas.width / 2, ctx.canvas.height / 2 - 30);
+        ctx.font = '24px sans-serif';
+        ctx.fillText('All zombies defeated!', ctx.canvas.width / 2, ctx.canvas.height / 2 + 20);
+      } else {
+        ctx.fillText('GAME OVER', ctx.canvas.width / 2, ctx.canvas.height / 2 - 30);
+        ctx.font = '24px sans-serif';
+        ctx.fillText('Zombies ate your brains!', ctx.canvas.width / 2, ctx.canvas.height / 2 + 20);
+      }
+      
+      ctx.font = '18px sans-serif';
+      ctx.fillText('Click to restart', ctx.canvas.width / 2, ctx.canvas.height / 2 + 60);
+    }
+  </script>
+
+  <!-- MAIN GAME -->
+  <script>
+    const Game = {
+      canvas: null,
+      ctx: null,
+      grid: [],
+      lastTime: 0,
+      gameOver: false,
+      victory: false,
+      zombieKillCount: 0,
+      victoryKills: 50, // Kill 50 zombies to win in v1.0
+      
+      init() {
+        this.canvas = document.getElementById('gameCanvas');
+        this.ctx = this.canvas.getContext('2d');
+        
+        // Initialize grid
+        this.initGrid();
+        
+        // Initialize input
+        InputHandler.init(this.canvas);
+        
+        // Add click listener for restart
+        this.canvas.addEventListener('click', (e) => {
+          if (this.gameOver || this.victory) {
+            this.restart();
+          }
+        });
+        
+        // Start loop
+        requestAnimationFrame((t) => this.loop(t));
+      },
+      
+      initGrid() {
+        this.grid = [];
+        for (let y = 0; y < GRID_CONFIG.LANES; y++) {
+          this.grid[y] = [];
+          for (let x = 0; x < GRID_CONFIG.COLUMNS; x++) {
+            this.grid[y][x] = null;
+          }
+        }
+      },
+      
+      restart() {
+        EntityManager.clear();
+        this.initGrid();
+        Spawner.reset();
+        this.gameOver = false;
+        this.victory = false;
+        this.zombieKillCount = 0;
+        this.lastTime = performance.now();
+        InputHandler.selectedPlant = null;
+      },
+      
+      onGameOver() {
+        this.gameOver = true;
+      },
+
+      onVictory() {
+        this.victory = true;
+      },
+      
+      loop(currentTime) {
+        if (!this.lastTime) this.lastTime = currentTime;
+        const deltaTime = currentTime - this.lastTime;
+        this.lastTime = currentTime;
+        
+        if (!this.gameOver && !this.victory) {
+          // Update systems in dependency order
+          updateZombies(deltaTime, currentTime, this.grid, () => this.onGameOver());
+          updatePlants(currentTime);
+          updateProjectiles(deltaTime, this.canvas.width);
+          Spawner.update(currentTime);
+          
+          // Clean up dead plants from grid
+          this.cleanupGrid();
+          
+          // Check victory condition
+          if (this.zombieKillCount >= this.victoryKills) {
+            this.onVictory();
+          }
+        }
+        
+        // Render
+        this.render();
+        
+        requestAnimationFrame((t) => this.loop(t));
+      },
+      
+      cleanupGrid() {
+        for (let y = 0; y < GRID_CONFIG.LANES; y++) {
+          for (let x = 0; x < GRID_CONFIG.COLUMNS; x++) {
+            const plant = this.grid[y][x];
+            if (plant && !plant.active) {
+              this.grid[y][x] = null;
+            }
+          }
+        }
+      },
+      
+      render() {
+        const ctx = this.ctx;
+        
+        // Clear
+        ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        
+        // Background
+        drawBackground(ctx);
+        
+        // Seed packet
+        drawSeedPacket(ctx, InputHandler.selectedPlant === 'PEASHOOTER');
+        
+        // Plants
+        for (const plant of EntityManager.getByType('plant')) {
+          drawPlant(ctx, plant);
+        }
+        
+        // Zombies
+        for (const zombie of EntityManager.getByType('zombie')) {
+          drawZombie(ctx, zombie);
+        }
+        
+        // Projectiles
+        for (const projectile of EntityManager.getByType('projectile')) {
+          drawProjectile(ctx, projectile);
+        }
+        
+        // Placement ghost
+        drawPlacementGhost(ctx, InputHandler.mouseX, InputHandler.mouseY, InputHandler.selectedPlant, this.grid);
+        
+        // Stats
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 16px sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText(`Zombies killed: ${this.zombieKillCount}/${this.victoryKills}`, 120, 40);
+        ctx.fillText(`Plants: ${EntityManager.plants.size}`, 120, 65);
+        ctx.fillText(`Zombies: ${EntityManager.zombies.size}`, 120, 90);
+        
+        // Game over screen
+        if (this.gameOver || this.victory) {
+          drawGameOver(ctx, this.victory);
+        }
+      }
+    };
+
+    // Track zombie kills
+    const originalDestroy = EntityManager.destroy;
+    EntityManager.destroy = function(entity) {
+      if (entity && entity.type === 'zombie' && entity.active && entity.zombie?.state === ZOMBIE_STATES.DYING) {
+        Game.zombieKillCount++;
+      }
+      originalDestroy.call(this, entity);
+    };
+
+    // Start game when page loads
+    window.onload = () => Game.init();
+  </script>
+</body>
+</html>
