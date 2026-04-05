@@ -1375,8 +1375,8 @@
       const c = COLORS.armor.cone;
       
       ctx.save();
-      ctx.translate(0, -32); // On top of head, slightly higher
-      ctx.scale(1.2, 1.2); // Make it 20% larger
+      ctx.translate(0, -48); // Higher up so bottom sits above eyes
+      ctx.scale(0.84, 0.7); // 30% smaller in height (0.7), slightly narrower
       
       // Cone gradient
       const coneGrad = ctx.createLinearGradient(-12, -25, 12, 10);
@@ -1420,8 +1420,8 @@
       const c = COLORS.armor.bucket;
       
       ctx.save();
-      ctx.translate(0, -28); // Covering head, slightly higher
-      ctx.scale(1.15, 1.15); // Make it 15% larger
+      ctx.translate(0, -42); // Higher up so bottom rim sits above eyes
+      ctx.scale(0.84, 0.7); // 30% smaller in height (0.7), slightly narrower
       
       // Bucket gradient
       const bucketGrad = ctx.createLinearGradient(-15, -30, 15, 15);
@@ -1473,8 +1473,8 @@
       // Draw drop shadow at feet (at 0, 0 relative to transform)
       drawZombieFootShadow(ctx);
       
-      // Offset upward so feet are at transform position
-      const feetOffset = -38;
+      // Offset upward so feet are at transform position (20% increased for proper alignment)
+      const feetOffset = -46;
       ctx.translate(0, feetOffset);
       
       if (isDying) {
@@ -1528,9 +1528,9 @@
       const healthPct = displayHealth / displayMax;
       if ((healthPct < 1 || zombie.armor) && !isDying) {
         ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-        ctx.fillRect(x - 18, y + feetOffset - 50, 36, 6);
+        ctx.fillRect(x - 18, y + feetOffset - 58, 36, 6);
         ctx.fillStyle = displayColor;
-        ctx.fillRect(x - 17, y + feetOffset - 49, 34 * healthPct, 4);
+        ctx.fillRect(x - 17, y + feetOffset - 57, 34 * healthPct, 4);
       }
     }
   </script>
@@ -1631,6 +1631,14 @@
         canvas.addEventListener('click', (e) => this.handleClick(e));
         canvas.addEventListener('mousemove', (e) => this.handleMouseMove(e));
         window.addEventListener('resize', () => Game.handleResize());
+        window.addEventListener('keydown', (e) => this.handleKeyDown(e));
+      },
+      
+      handleKeyDown(e) {
+        if (e.key === 'e' || e.key === 'E') {
+          this.selectedPlant = null;
+          SeedPacketSystem.packets.forEach(p => p.isSelected = false);
+        }
       },
       
       handleClick(e) {
@@ -2013,6 +2021,10 @@
     }
 
     function drawBackground(ctx) {
+      // Draw green base layer to mask any gaps
+      ctx.fillStyle = '#4a7c23'; // Dark green base
+      ctx.fillRect(0, 0, DESIGN_WIDTH, DESIGN_HEIGHT);
+      
       generateGrassBlades(); // Ensure grass is generated
       generateBushes(); // Ensure bushes are generated
       drawPavement(ctx);
