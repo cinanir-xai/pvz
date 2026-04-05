@@ -93,7 +93,7 @@
         height: 60,
         behavior: 'producer',
         produceInterval: 24000,
-        sunValue: 25
+        sunValue: 50
       },
       WALLNUT: {
         id: 'wallnut',
@@ -153,7 +153,7 @@
     const NATURAL_SUN_CONFIG = {
       interval: 10000,
       intervalVariance: 3000,
-      value: 25,
+      value: 50,
       fallSpeed: 60,
       drift: 15,
       despawnTime: 8000,
@@ -444,18 +444,18 @@
         this.createSun(SUN_TYPES.NATURAL, x, LAYOUT.UI_TOP_MARGIN - 30, targetY);
       },
       
-      spawnPlantSun(x, y) {
-        this.createSun(SUN_TYPES.PLANT, x, y - 40, null);
+      spawnPlantSun(x, y, value = 50) {
+        this.createSun(SUN_TYPES.PLANT, x, y - 40, null, value);
       },
       
-      createSun(type, x, y, targetY) {
+      createSun(type, x, y, targetY, value = NATURAL_SUN_CONFIG.value) {
         const currentTime = performance.now();
         const sun = EntityManager.create('sun');
         
         sun.transform = { x, y };
         sun.sun = {
           type,
-          value: NATURAL_SUN_CONFIG.value,
+          value: value,
           spawnTime: currentTime,
           autoCollectTime: currentTime + NATURAL_SUN_CONFIG.autoCollectTime,
           despawnTime: currentTime + NATURAL_SUN_CONFIG.despawnTime,
@@ -600,7 +600,7 @@
         // Producer behavior (Sunflower)
         if (type.behavior === 'producer') {
           if (currentTime >= plant.plant.nextProduceTime) {
-            SunSystem.spawnPlantSun(plant.transform.x, plant.transform.y);
+            SunSystem.spawnPlantSun(plant.transform.x, plant.transform.y, type.sunValue);
             plant.plant.nextProduceTime = currentTime + type.produceInterval;
           }
         }
@@ -1375,7 +1375,8 @@
       const c = COLORS.armor.cone;
       
       ctx.save();
-      ctx.translate(0, -28); // On top of head
+      ctx.translate(0, -32); // On top of head, slightly higher
+      ctx.scale(1.2, 1.2); // Make it 20% larger
       
       // Cone gradient
       const coneGrad = ctx.createLinearGradient(-12, -25, 12, 10);
@@ -1419,7 +1420,8 @@
       const c = COLORS.armor.bucket;
       
       ctx.save();
-      ctx.translate(0, -25); // Covering head
+      ctx.translate(0, -28); // Covering head, slightly higher
+      ctx.scale(1.15, 1.15); // Make it 15% larger
       
       // Bucket gradient
       const bucketGrad = ctx.createLinearGradient(-15, -30, 15, 15);
@@ -1497,8 +1499,9 @@
       drawZombieLegs(ctx, zombie.animationFrame, isFlashing);
       drawZombieBody(ctx, isFlashing);
       drawZombieTie(ctx);
+      drawZombieHead(ctx, zombie.animationFrame, isFlashing);
       
-      // Draw armor if present (before head, so head is on top for cone)
+      // Draw armor if present (AFTER head so it renders on top)
       if (zombie.armor && !zombie.armor.isBroken) {
         const armorPct = zombie.armor.current / zombie.armor.max;
         if (zombie.armor.type === 'cone') {
@@ -1507,8 +1510,6 @@
           drawBucket(ctx, armorPct, isFlashing);
         }
       }
-      
-      drawZombieHead(ctx, zombie.animationFrame, isFlashing);
       
       ctx.restore();
       
@@ -2378,13 +2379,6 @@
         
         // Placement ghost
         drawPlacementGhost(ctx, InputHandler.mouseX, InputHandler.mouseY, InputHandler.selectedPlant, this.grid);
-        
-        // Stats
-        ctx.fillStyle = '#fff';
-        ctx.font = 'bold 14px sans-serif';
-        ctx.textAlign = 'left';
-        ctx.fillText(`Kills: ${this.zombieKillCount}/${this.victoryKills}`, 370, 35);
-        ctx.fillText(`Zombies: ${EntityManager.zombies.size}`, 370, 55);
         
         // Game over
         if (this.gameOver || this.victory) {
