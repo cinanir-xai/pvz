@@ -629,10 +629,12 @@
       if (!type) return null;
 
       const startX = LAYOUT.UI_LEFT_MARGIN + LAYOUT.COLUMNS * LAYOUT.CELL_WIDTH + 60;
-      const startY = LAYOUT.UI_TOP_MARGIN + lane * LAYOUT.CELL_HEIGHT + LAYOUT.CELL_HEIGHT / 2;
+      // Position feet in bottom 25% of the tile (tile bottom is at (lane+1)*CELL_HEIGHT)
+      const tileBottom = LAYOUT.UI_TOP_MARGIN + (lane + 1) * LAYOUT.CELL_HEIGHT;
+      const feetY = tileBottom - (LAYOUT.CELL_HEIGHT * 0.15); // 15% from bottom (was 25%, adjusting for visual)
       
       const zombie = EntityManager.create('zombie');
-      zombie.transform = { x: startX, y: startY, width: type.width, height: type.height };
+      zombie.transform = { x: startX, y: feetY, width: type.width, height: type.height };
       zombie.health = { current: type.health, max: type.health };
       zombie.zombie = {
         type: typeId, lane, state: ZOMBIE_STATES.WALKING,
@@ -716,67 +718,75 @@
       }
     }
 
-    // Detailed Zombie Drawing
+    // Detailed Zombie Drawing - Scaled down 25% and with foot drop shadow
+    function drawZombieFootShadow(ctx) {
+      // Drop shadow beneath feet - transparent circle
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.25)';
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 28, 10, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
     function drawZombieLegs(ctx, animFrame, isFlashing) {
       const c = COLORS.zombie;
       const walkCycle = Math.sin(animFrame * 0.15);
       
-      // Left leg
+      // Left leg - scaled down
       ctx.fillStyle = isFlashing ? '#fff' : c.pants;
       ctx.save();
-      ctx.translate(-12, 32);
+      ctx.translate(-9, 24);
       ctx.rotate(walkCycle * 0.25);
-      ctx.fillRect(-9, 0, 18, 42);
+      ctx.fillRect(-7, 0, 14, 32);
       ctx.fillStyle = '#212121';
-      ctx.fillRect(-11, 38, 22, 10);
+      ctx.fillRect(-8, 29, 17, 8);
       ctx.restore();
       
-      // Right leg
+      // Right leg - scaled down
       ctx.fillStyle = isFlashing ? '#fff' : c.pants;
       ctx.save();
-      ctx.translate(12, 32);
+      ctx.translate(9, 24);
       ctx.rotate(-walkCycle * 0.25);
-      ctx.fillRect(-9, 0, 18, 42);
+      ctx.fillRect(-7, 0, 14, 32);
       ctx.fillStyle = '#212121';
-      ctx.fillRect(-11, 38, 22, 10);
+      ctx.fillRect(-8, 29, 17, 8);
       ctx.restore();
     }
 
     function drawZombieBody(ctx, isFlashing) {
       const c = COLORS.zombie;
       
-      const bodyGrad = ctx.createLinearGradient(-22, -20, 22, 20);
+      const bodyGrad = ctx.createLinearGradient(-17, -15, 17, 15);
       bodyGrad.addColorStop(0, isFlashing ? '#fff' : c.suitDark);
       bodyGrad.addColorStop(0.5, isFlashing ? '#fff' : c.suit);
       bodyGrad.addColorStop(1, isFlashing ? '#fff' : c.suitLight);
       
       ctx.fillStyle = bodyGrad;
       ctx.beginPath();
-      ctx.roundRect(-24, -12, 48, 48, 6);
+      ctx.roundRect(-18, -9, 36, 36, 5);
       ctx.fill();
       
       // Shirt
       ctx.fillStyle = c.shirt;
       ctx.beginPath();
-      ctx.moveTo(-12, -12);
-      ctx.lineTo(12, -12);
-      ctx.lineTo(0, 18);
+      ctx.moveTo(-9, -9);
+      ctx.lineTo(9, -9);
+      ctx.lineTo(0, 14);
       ctx.closePath();
       ctx.fill();
       
       // Lapels
       ctx.fillStyle = isFlashing ? '#ddd' : c.suitDark;
       ctx.beginPath();
-      ctx.moveTo(-24, -12);
-      ctx.lineTo(-6, 18);
-      ctx.lineTo(-24, 22);
+      ctx.moveTo(-18, -9);
+      ctx.lineTo(-5, 14);
+      ctx.lineTo(-18, 17);
       ctx.closePath();
       ctx.fill();
       
       ctx.beginPath();
-      ctx.moveTo(24, -12);
-      ctx.lineTo(6, 18);
-      ctx.lineTo(24, 22);
+      ctx.moveTo(18, -9);
+      ctx.lineTo(5, 14);
+      ctx.lineTo(18, 17);
       ctx.closePath();
       ctx.fill();
     }
@@ -785,39 +795,39 @@
       const c = COLORS.zombie;
       ctx.fillStyle = c.tie;
       ctx.beginPath();
-      ctx.moveTo(-6, -10);
-      ctx.lineTo(6, -10);
-      ctx.lineTo(4, 6);
-      ctx.lineTo(0, 28);
-      ctx.lineTo(-4, 6);
+      ctx.moveTo(-5, -8);
+      ctx.lineTo(5, -8);
+      ctx.lineTo(3, 5);
+      ctx.lineTo(0, 22);
+      ctx.lineTo(-3, 5);
       ctx.closePath();
       ctx.fill();
       
       ctx.fillStyle = c.tieDark;
       ctx.beginPath();
-      ctx.moveTo(0, -10);
-      ctx.lineTo(4, 6);
-      ctx.lineTo(0, 28);
-      ctx.lineTo(-1, 6);
+      ctx.moveTo(0, -8);
+      ctx.lineTo(3, 5);
+      ctx.lineTo(0, 22);
+      ctx.lineTo(-1, 5);
       ctx.closePath();
       ctx.fill();
     }
 
     function drawZombieHead(ctx, animFrame, isFlashing) {
       const c = COLORS.zombie;
-      const headBob = Math.sin(animFrame * 0.1) * 2;
+      const headBob = Math.sin(animFrame * 0.1) * 1.5;
       
       ctx.save();
-      ctx.translate(0, -38 + headBob);
+      ctx.translate(0, -29 + headBob);
       
-      const headGrad = ctx.createRadialGradient(-12, -18, 5, 0, 0, 38);
+      const headGrad = ctx.createRadialGradient(-9, -14, 4, 0, 0, 29);
       headGrad.addColorStop(0, isFlashing ? '#fff' : c.skinHighlight);
       headGrad.addColorStop(0.5, isFlashing ? '#fff' : c.skin);
       headGrad.addColorStop(1, isFlashing ? '#ddd' : c.skinShadow);
       
       ctx.fillStyle = headGrad;
       ctx.beginPath();
-      ctx.ellipse(0, 0, 30, 34, 0, 0, Math.PI * 2);
+      ctx.ellipse(0, 0, 23, 26, 0, 0, Math.PI * 2);
       ctx.fill();
       
       // Hair
@@ -825,7 +835,7 @@
       for (let i = 0; i < 8; i++) {
         const angle = -Math.PI / 2 + (i - 4) * 0.35;
         ctx.beginPath();
-        ctx.arc(Math.cos(angle) * 26, Math.sin(angle) * 30, 7, 0, Math.PI * 2);
+        ctx.arc(Math.cos(angle) * 20, Math.sin(angle) * 23, 5, 0, Math.PI * 2);
         ctx.fill();
       }
       
@@ -835,7 +845,7 @@
       // Nose
       ctx.fillStyle = isFlashing ? '#ddd' : c.skinShadow;
       ctx.beginPath();
-      ctx.ellipse(-6, 10, 5, 7, 0.3, 0, Math.PI * 2);
+      ctx.ellipse(-5, 8, 4, 5, 0.3, 0, Math.PI * 2);
       ctx.fill();
       
       // Mouth
@@ -849,20 +859,20 @@
       
       ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
       ctx.beginPath();
-      ctx.ellipse(-12, -6, 11, 13, 0, 0, Math.PI * 2);
-      ctx.ellipse(12, -6, 11, 13, 0, 0, Math.PI * 2);
+      ctx.ellipse(-9, -5, 8, 10, 0, 0, Math.PI * 2);
+      ctx.ellipse(9, -5, 8, 10, 0, 0, Math.PI * 2);
       ctx.fill();
       
       ctx.fillStyle = c.eyeWhite;
       ctx.beginPath();
-      ctx.ellipse(-12, -6, 8, 10, 0, 0, Math.PI * 2);
-      ctx.ellipse(12, -6, 8, 10, 0, 0, Math.PI * 2);
+      ctx.ellipse(-9, -5, 6, 8, 0, 0, Math.PI * 2);
+      ctx.ellipse(9, -5, 6, 8, 0, 0, Math.PI * 2);
       ctx.fill();
       
       ctx.fillStyle = c.eyePupil;
       ctx.beginPath();
-      ctx.arc(-15, -6, 3.5, 0, Math.PI * 2);
-      ctx.arc(9, -6, 3.5, 0, Math.PI * 2);
+      ctx.arc(-11, -5, 2.5, 0, Math.PI * 2);
+      ctx.arc(7, -5, 2.5, 0, Math.PI * 2);
       ctx.fill();
     }
 
@@ -870,18 +880,18 @@
       const c = COLORS.zombie;
       ctx.fillStyle = c.mouth;
       ctx.beginPath();
-      ctx.ellipse(-6, 22, 14, 9, 0, 0, Math.PI * 2);
+      ctx.ellipse(-5, 17, 11, 7, 0, 0, Math.PI * 2);
       ctx.fill();
       
       ctx.fillStyle = c.teeth;
       for (let i = 0; i < 4; i++) {
-        ctx.fillRect(-14 + i * 7, 17, 5, 6);
-        ctx.fillRect(-14 + i * 7, 24, 5, 5);
+        ctx.fillRect(-11 + i * 5.5, 13, 4, 5);
+        ctx.fillRect(-11 + i * 5.5, 19, 4, 4);
       }
       
       ctx.fillStyle = '#5d1010';
       ctx.beginPath();
-      ctx.ellipse(-6, 24, 7, 3.5, 0, 0, Math.PI * 2);
+      ctx.ellipse(-5, 19, 5.5, 3, 0, 0, Math.PI * 2);
       ctx.fill();
     }
 
@@ -891,13 +901,13 @@
       
       // Back arm
       ctx.save();
-      ctx.translate(-22, 0);
+      ctx.translate(-17, 0);
       ctx.rotate(swing * 0.3 + Math.PI);
       ctx.fillStyle = isFlashing ? '#fff' : c.suit;
-      ctx.fillRect(-9, 0, 18, 38);
+      ctx.fillRect(-7, 0, 14, 29);
       ctx.fillStyle = isFlashing ? '#fff' : c.skin;
       ctx.beginPath();
-      ctx.ellipse(0, 42, 9, 11, 0, 0, Math.PI * 2);
+      ctx.ellipse(0, 32, 7, 8, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
       
@@ -906,15 +916,15 @@
       if (state === ZOMBIE_STATES.EATING) rotation = -0.9;
       
       ctx.save();
-      ctx.translate(22, 0);
+      ctx.translate(17, 0);
       ctx.rotate(rotation);
       ctx.fillStyle = isFlashing ? '#fff' : c.suit;
-      ctx.fillRect(-9, 0, 18, 22);
+      ctx.fillRect(-7, 0, 14, 17);
       ctx.fillStyle = isFlashing ? '#ddd' : c.suitDark;
-      ctx.fillRect(-8, 20, 16, 20);
+      ctx.fillRect(-6, 15, 12, 15);
       ctx.fillStyle = isFlashing ? '#fff' : c.skin;
       ctx.beginPath();
-      ctx.ellipse(0, 44, 10, 12, 0, 0, Math.PI * 2);
+      ctx.ellipse(0, 33, 8, 9, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
     }
@@ -929,26 +939,26 @@
       ctx.save();
       ctx.translate(x, y);
       
+      // Draw drop shadow at feet (at 0, 0 relative to transform)
+      drawZombieFootShadow(ctx);
+      
       if (isDying) {
         const elapsed = performance.now() - zombie.zombie.deathTime;
         const progress = elapsed / 500;
         ctx.globalAlpha = 1 - progress;
-        ctx.translate(0, progress * 30);
+        ctx.translate(0, progress * 25);
         ctx.rotate(progress * 0.5);
       }
       
       if (zombie.zombie.state === ZOMBIE_STATES.EATING) {
         ctx.rotate(0.12);
-        ctx.translate(6, 0);
+        ctx.translate(5, 0);
       }
       
       const bob = zombie.zombie.state === ZOMBIE_STATES.WALKING 
-        ? Math.abs(Math.sin(zombie.animationFrame * 0.15)) * 3 
+        ? Math.abs(Math.sin(zombie.animationFrame * 0.15)) * 2.5 
         : 0;
-      ctx.translate(0, bob);
-      
-      // Shadow
-      drawShadow(ctx, 0, 0, 55);
+      ctx.translate(0, -bob); // Move up by bob amount (feet stay at y)
       
       drawZombieArms(ctx, zombie.animationFrame, zombie.zombie.state, isFlashing);
       drawZombieLegs(ctx, zombie.animationFrame, isFlashing);
@@ -958,13 +968,13 @@
       
       ctx.restore();
       
-      // Health bar
+      // Health bar - positioned above head
       const healthPct = zombie.health.current / zombie.health.max;
       if (healthPct < 1 && !isDying) {
         ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-        ctx.fillRect(x - 22, y - 65, 44, 7);
+        ctx.fillRect(x - 18, y - 50, 36, 6);
         ctx.fillStyle = healthPct > 0.5 ? '#4caf50' : '#f44336';
-        ctx.fillRect(x - 21, y - 64, 42 * healthPct, 5);
+        ctx.fillRect(x - 17, y - 49, 34 * healthPct, 4);
       }
     }
   </script>
@@ -1059,18 +1069,121 @@
 
   <!-- BACKGROUND RENDERER -->
   <script>
+    // Cached grass blades - generated once
+    const cachedGrassBlades = [];
+    function generateGrassBlades() {
+      if (cachedGrassBlades.length > 0) return;
+      const lx = LAYOUT.UI_LEFT_MARGIN;
+      const ly = LAYOUT.UI_TOP_MARGIN;
+      const lw = LAYOUT.COLUMNS * LAYOUT.CELL_WIDTH;
+      const lh = LAYOUT.LANES * LAYOUT.CELL_HEIGHT;
+      
+      for (let i = 0; i < 300; i++) {
+        cachedGrassBlades.push({
+          x: lx + Math.random() * lw,
+          y: ly + Math.random() * lh,
+          h: 6 + Math.random() * 12,
+          lean: (Math.random() - 0.5) * 5
+        });
+      }
+    }
+
     function drawSky(ctx) {
-      const grad = ctx.createLinearGradient(0, 0, 0, DESIGN_HEIGHT);
+      // Only draw sky above the fence/arena area
+      const fenceY = LAYOUT.UI_TOP_MARGIN - 25;
+      const grad = ctx.createLinearGradient(0, 0, 0, fenceY);
       grad.addColorStop(0, COLORS.sky.top);
-      grad.addColorStop(0.6, COLORS.sky.middle);
+      grad.addColorStop(0.7, COLORS.sky.middle);
       grad.addColorStop(1, COLORS.sky.bottom);
       ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, DESIGN_WIDTH, DESIGN_HEIGHT);
+      ctx.fillRect(0, 0, DESIGN_WIDTH, fenceY);
+    }
+
+    function drawPavement(ctx) {
+      const c = COLORS.house;
+      // Pavement below house (left side)
+      const paveX = 0;
+      const paveY = LAYOUT.UI_TOP_MARGIN + LAYOUT.LANES * LAYOUT.CELL_HEIGHT;
+      const paveW = LAYOUT.UI_LEFT_MARGIN + 20;
+      const paveH = DESIGN_HEIGHT - paveY;
+      
+      ctx.fillStyle = '#757575';
+      ctx.fillRect(paveX, paveY, paveW, paveH);
+      
+      // Pavement stones pattern
+      ctx.strokeStyle = '#616161';
+      ctx.lineWidth = 1;
+      for (let y = paveY; y < DESIGN_HEIGHT; y += 20) {
+        ctx.beginPath();
+        ctx.moveTo(paveX, y);
+        ctx.lineTo(paveW, y);
+        ctx.stroke();
+      }
+      for (let x = paveX; x < paveW; x += 30) {
+        ctx.beginPath();
+        ctx.moveTo(x, paveY);
+        ctx.lineTo(x, DESIGN_HEIGHT);
+        ctx.stroke();
+      }
+      
+      // Pavement at bottom of screen (full width)
+      const bottomPaveY = LAYOUT.UI_TOP_MARGIN + LAYOUT.LANES * LAYOUT.CELL_HEIGHT;
+      const bottomPaveH = DESIGN_HEIGHT - bottomPaveY;
+      
+      ctx.fillStyle = '#6d6d6d';
+      ctx.fillRect(LAYOUT.UI_LEFT_MARGIN, bottomPaveY, DESIGN_WIDTH - LAYOUT.UI_LEFT_MARGIN, bottomPaveH);
+      
+      // Stone pattern for bottom pavement
+      ctx.strokeStyle = '#555';
+      for (let y = bottomPaveY; y < DESIGN_HEIGHT; y += 18) {
+        ctx.beginPath();
+        ctx.moveTo(LAYOUT.UI_LEFT_MARGIN, y);
+        ctx.lineTo(DESIGN_WIDTH, y);
+        ctx.stroke();
+      }
+    }
+
+    function drawBushes(ctx) {
+      const bushX = LAYOUT.UI_LEFT_MARGIN + LAYOUT.COLUMNS * LAYOUT.CELL_WIDTH;
+      const bushY = LAYOUT.UI_TOP_MARGIN;
+      const bushW = DESIGN_WIDTH - bushX;
+      const bushH = LAYOUT.LANES * LAYOUT.CELL_HEIGHT;
+      
+      // Multiple layers of bushes
+      const bushColors = ['#2e7d32', '#388e3c', '#43a047', '#4caf50'];
+      
+      for (let layer = 0; layer < 4; layer++) {
+        ctx.fillStyle = bushColors[layer];
+        for (let i = 0; i < 15; i++) {
+          const x = bushX + Math.random() * bushW;
+          const y = bushY + Math.random() * bushH;
+          const r = 25 + Math.random() * 35;
+          
+          ctx.beginPath();
+          ctx.arc(x, y, r, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      
+      // Bush highlights
+      ctx.fillStyle = '#66bb6a';
+      for (let i = 0; i < 20; i++) {
+        const x = bushX + Math.random() * bushW;
+        const y = bushY + Math.random() * bushH;
+        const r = 10 + Math.random() * 15;
+        ctx.beginPath();
+        ctx.arc(x, y - r/2, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
 
     function drawHouse(ctx) {
       const c = COLORS.house;
       const hx = 15, hy = 110, hw = 145, hh = 380;
+      
+      // Pavement below house
+      ctx.fillStyle = '#757575';
+      ctx.fillRect(hx - 10, hy + hh, hw + 20, DESIGN_HEIGHT - (hy + hh));
       
       // Wall with siding
       ctx.fillStyle = c.wall;
@@ -1176,7 +1289,7 @@
       ctx.fillStyle = grassGrad;
       ctx.fillRect(lx, ly, lw, lh);
       
-      // Grass blades
+      // Draw cached grass blades
       ctx.save();
       ctx.beginPath();
       ctx.rect(lx, ly, lw, lh);
@@ -1184,14 +1297,10 @@
       
       ctx.strokeStyle = c.highlight;
       ctx.lineWidth = 2;
-      for (let i = 0; i < 250; i++) {
-        const gx = lx + Math.random() * lw;
-        const gy = ly + Math.random() * lh;
-        const h = 6 + Math.random() * 12;
-        const lean = (Math.random() - 0.5) * 5;
+      for (const blade of cachedGrassBlades) {
         ctx.beginPath();
-        ctx.moveTo(gx, gy);
-        ctx.quadraticCurveTo(gx + lean, gy - h / 2, gx + lean * 2, gy - h);
+        ctx.moveTo(blade.x, blade.y);
+        ctx.quadraticCurveTo(blade.x + blade.lean, blade.y - blade.h / 2, blade.x + blade.lean * 2, blade.y - blade.h);
         ctx.stroke();
       }
       ctx.restore();
@@ -1216,10 +1325,13 @@
     }
 
     function drawBackground(ctx) {
+      generateGrassBlades(); // Ensure grass is generated
+      drawPavement(ctx);
       drawSky(ctx);
       drawHouse(ctx);
       drawLawn(ctx);
       drawFence(ctx);
+      drawBushes(ctx);
     }
   </script>
 
