@@ -942,6 +942,11 @@
       // Draw drop shadow at feet (at 0, 0 relative to transform)
       drawZombieFootShadow(ctx);
       
+      // Offset upward so feet are at transform position
+      // The zombie drawing has feet around y=+38, so we shift up by that amount
+      const feetOffset = -38;
+      ctx.translate(0, feetOffset);
+      
       if (isDying) {
         const elapsed = performance.now() - zombie.zombie.deathTime;
         const progress = elapsed / 500;
@@ -968,13 +973,13 @@
       
       ctx.restore();
       
-      // Health bar - positioned above head
+      // Health bar - positioned above head (accounting for feetOffset)
       const healthPct = zombie.health.current / zombie.health.max;
       if (healthPct < 1 && !isDying) {
         ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-        ctx.fillRect(x - 18, y - 50, 36, 6);
+        ctx.fillRect(x - 18, y + feetOffset - 50, 36, 6);
         ctx.fillStyle = healthPct > 0.5 ? '#4caf50' : '#f44336';
-        ctx.fillRect(x - 17, y - 49, 34 * healthPct, 4);
+        ctx.fillRect(x - 17, y + feetOffset - 49, 34 * healthPct, 4);
       }
     }
   </script>
@@ -1071,6 +1076,8 @@
   <script>
     // Cached grass blades - generated once
     const cachedGrassBlades = [];
+    const cachedBushes = [];
+    
     function generateGrassBlades() {
       if (cachedGrassBlades.length > 0) return;
       const lx = LAYOUT.UI_LEFT_MARGIN;
@@ -1084,6 +1091,41 @@
           y: ly + Math.random() * lh,
           h: 6 + Math.random() * 12,
           lean: (Math.random() - 0.5) * 5
+        });
+      }
+    }
+    
+    function generateBushes() {
+      if (cachedBushes.length > 0) return;
+      
+      const bushX = LAYOUT.UI_LEFT_MARGIN + LAYOUT.COLUMNS * LAYOUT.CELL_WIDTH;
+      const bushY = LAYOUT.UI_TOP_MARGIN;
+      const bushW = DESIGN_WIDTH - bushX;
+      const bushH = LAYOUT.LANES * LAYOUT.CELL_HEIGHT;
+      
+      // Generate 4 layers of bushes
+      const bushColors = ['#2e7d32', '#388e3c', '#43a047', '#4caf50'];
+      
+      for (let layer = 0; layer < 4; layer++) {
+        for (let i = 0; i < 15; i++) {
+          cachedBushes.push({
+            x: bushX + Math.random() * bushW,
+            y: bushY + Math.random() * bushH,
+            r: 25 + Math.random() * 35,
+            color: bushColors[layer],
+            isHighlight: false
+          });
+        }
+      }
+      
+      // Bush highlights
+      for (let i = 0; i < 20; i++) {
+        cachedBushes.push({
+          x: bushX + Math.random() * bushW,
+          y: bushY + Math.random() * bushH,
+          r: 10 + Math.random() * 15,
+          color: '#66bb6a',
+          isHighlight: true
         });
       }
     }
@@ -1144,35 +1186,15 @@
     }
 
     function drawBushes(ctx) {
-      const bushX = LAYOUT.UI_LEFT_MARGIN + LAYOUT.COLUMNS * LAYOUT.CELL_WIDTH;
-      const bushY = LAYOUT.UI_TOP_MARGIN;
-      const bushW = DESIGN_WIDTH - bushX;
-      const bushH = LAYOUT.LANES * LAYOUT.CELL_HEIGHT;
-      
-      // Multiple layers of bushes
-      const bushColors = ['#2e7d32', '#388e3c', '#43a047', '#4caf50'];
-      
-      for (let layer = 0; layer < 4; layer++) {
-        ctx.fillStyle = bushColors[layer];
-        for (let i = 0; i < 15; i++) {
-          const x = bushX + Math.random() * bushW;
-          const y = bushY + Math.random() * bushH;
-          const r = 25 + Math.random() * 35;
-          
-          ctx.beginPath();
-          ctx.arc(x, y, r, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
-      
-      // Bush highlights
-      ctx.fillStyle = '#66bb6a';
-      for (let i = 0; i < 20; i++) {
-        const x = bushX + Math.random() * bushW;
-        const y = bushY + Math.random() * bushH;
-        const r = 10 + Math.random() * 15;
+      // Draw cached bushes
+      for (const bush of cachedBushes) {
+        ctx.fillStyle = bush.color;
         ctx.beginPath();
-        ctx.arc(x, y - r/2, r, 0, Math.PI * 2);
+        if (bush.isHighlight) {
+          ctx.arc(bush.x, bush.y - bush.r/2, bush.r, 0, Math.PI * 2);
+        } else {
+          ctx.arc(bush.x, bush.y, bush.r, 0, Math.PI * 2);
+        }
         ctx.fill();
       }
     }
@@ -1326,6 +1348,7 @@
 
     function drawBackground(ctx) {
       generateGrassBlades(); // Ensure grass is generated
+      generateBushes(); // Ensure bushes are generated
       drawPavement(ctx);
       drawSky(ctx);
       drawHouse(ctx);
