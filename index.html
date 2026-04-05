@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Plants vs Zombies - v1.0</title>
+  <title>Plants vs Zombies - Visual Overhaul</title>
   <style>
     * {
       margin: 0;
@@ -11,56 +11,60 @@
       box-sizing: border-box;
     }
 
-    body {
-      background: #2e1a0f;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      min-height: 100vh;
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #000;
     }
 
     #gameCanvas {
-      border: 4px solid #5d4037;
-      border-radius: 8px;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+      display: block;
       cursor: crosshair;
     }
 
-    #ui {
-      margin-top: 10px;
+    #loading {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
       color: #fff;
-      text-align: center;
-    }
-
-    #ui h1 {
-      font-size: 1.2rem;
-      margin-bottom: 5px;
-    }
-
-    #ui p {
-      font-size: 0.9rem;
-      color: #ccc;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      font-size: 24px;
+      pointer-events: none;
     }
   </style>
 </head>
 <body>
-  <canvas id="gameCanvas" width="1000" height="650"></canvas>
-  <div id="ui">
-    <h1>Plants vs Zombies v1.0</h1>
-    <p>Click seed packet, then click grid to place | Peashooters shoot automatically | Zombies spawn from the right</p>
-  </div>
+  <canvas id="gameCanvas"></canvas>
+  <div id="loading">Loading...</div>
 
   <!-- CONFIG -->
   <script>
-    const GRID_CONFIG = {
+    // Design resolution (internal coordinate system)
+    const DESIGN_WIDTH = 1024;
+    const DESIGN_HEIGHT = 600;
+    
+    // Layout configuration
+    const LAYOUT = {
+      UI_TOP_MARGIN: 85,
+      UI_BOTTOM_MARGIN: 20,
+      UI_LEFT_MARGIN: 170,
+      UI_RIGHT_MARGIN: 120,
       LANES: 5,
       COLUMNS: 9,
-      CELL_WIDTH: 80,
-      CELL_HEIGHT: 100,
-      OFFSET_X: 250,
-      OFFSET_Y: 120
+      get CELL_WIDTH() { return (DESIGN_WIDTH - this.UI_LEFT_MARGIN - this.UI_RIGHT_MARGIN) / this.COLUMNS; },
+      get CELL_HEIGHT() { return (DESIGN_HEIGHT - this.UI_TOP_MARGIN - this.UI_BOTTOM_MARGIN) / this.LANES; }
+    };
+
+    // For backward compatibility with existing code
+    const GRID_CONFIG = {
+      LANES: LAYOUT.LANES,
+      COLUMNS: LAYOUT.COLUMNS,
+      CELL_WIDTH: LAYOUT.CELL_WIDTH,
+      CELL_HEIGHT: LAYOUT.CELL_HEIGHT,
+      OFFSET_X: LAYOUT.UI_LEFT_MARGIN,
+      OFFSET_Y: LAYOUT.UI_TOP_MARGIN
     };
 
     const PLANT_TYPES = {
@@ -70,7 +74,7 @@
         health: 300,
         cooldown: 1400,
         projectile: 'PEA',
-        color: '#4caf50',
+        cost: 100,
         radius: 25,
         width: 50,
         height: 60
@@ -82,10 +86,9 @@
         id: 'basic',
         name: 'Basic Zombie',
         health: 200,
-        speed: 30,
+        speed: 28,
         damage: 100,
         eatCooldown: 1000,
-        color: '#8bc34a',
         width: 40,
         height: 70
       }
@@ -94,10 +97,9 @@
     const PROJECTILE_TYPES = {
       PEA: {
         id: 'pea',
-        speed: 400,
+        speed: 380,
         damage: 20,
-        radius: 8,
-        color: '#76ff03'
+        radius: 8
       }
     };
 
@@ -106,40 +108,86 @@
       EATING: 'eating',
       DYING: 'dying'
     };
+
+    // Color palettes
+    const COLORS = {
+      sky: { top: '#4fc3f7', middle: '#81d4fa', bottom: '#b3e5fc' },
+      house: {
+        wall: '#8d6e63', wallShadow: '#6d4c41', roof: '#5d4037',
+        roofHighlight: '#795548', window: '#424242', windowLight: '#ffeb3b',
+        door: '#4e342e', doorKnob: '#ffc107', trim: '#d7ccc8'
+      },
+      lawn: {
+        light: '#8bc34a', dark: '#689f38', highlight: '#aed581',
+        shadow: '#558b2f', dirt: '#5d4037'
+      },
+      peashooter: {
+        bodyMain: '#66bb6a', bodyDark: '#43a047', bodyLight: '#81c784',
+        head: '#4caf50', mouth: '#2e7d32', mouthDark: '#1b5e20',
+        leaf: '#388e3c', leafLight: '#4caf50', stem: '#2e7d32',
+        eyeWhite: '#ffffff', eyePupil: '#000000', cheek: '#f8bbd0'
+      },
+      zombie: {
+        skin: '#c5e1a5', skinShadow: '#9ccc65', skinHighlight: '#dcedc8',
+        suit: '#616161', suitDark: '#424242', suitLight: '#757575',
+        shirt: '#eeeeee', tie: '#d32f2f', tieDark: '#b71c1c',
+        pants: '#424242', eyeWhite: '#ffeb3b', eyePupil: '#000000',
+        mouth: '#3e2723', teeth: '#eeeeee'
+      },
+      pea: {
+        core: '#76ff03', main: '#64dd17', shadow: '#33691e',
+        glow: 'rgba(118, 255, 3, 0.3)'
+      },
+      ui: {
+        packetBg: '#8d6e63', packetSelected: '#5d4037', packetBorder: '#3e2723',
+        packetHighlight: '#d7ccc8', text: '#ffffff', cost: '#ffeb3b',
+        panel: '#5d4037', panelBorder: '#8d6e63'
+      }
+    };
   </script>
 
   <!-- UTILS -->
   <script>
     function gridToPixel(gridX, gridY) {
       return {
-        x: GRID_CONFIG.OFFSET_X + gridX * GRID_CONFIG.CELL_WIDTH + GRID_CONFIG.CELL_WIDTH / 2,
-        y: GRID_CONFIG.OFFSET_Y + gridY * GRID_CONFIG.CELL_HEIGHT + GRID_CONFIG.CELL_HEIGHT / 2
+        x: LAYOUT.UI_LEFT_MARGIN + gridX * LAYOUT.CELL_WIDTH + LAYOUT.CELL_WIDTH / 2,
+        y: LAYOUT.UI_TOP_MARGIN + gridY * LAYOUT.CELL_HEIGHT + LAYOUT.CELL_HEIGHT / 2
       };
     }
 
     function pixelToGrid(pixelX, pixelY) {
-      const gridX = Math.floor((pixelX - GRID_CONFIG.OFFSET_X) / GRID_CONFIG.CELL_WIDTH);
-      const gridY = Math.floor((pixelY - GRID_CONFIG.OFFSET_Y) / GRID_CONFIG.CELL_HEIGHT);
+      const gridX = Math.floor((pixelX - LAYOUT.UI_LEFT_MARGIN) / LAYOUT.CELL_WIDTH);
+      const gridY = Math.floor((pixelY - LAYOUT.UI_TOP_MARGIN) / LAYOUT.CELL_HEIGHT);
       
-      if (gridX < 0 || gridX >= GRID_CONFIG.COLUMNS || 
-          gridY < 0 || gridY >= GRID_CONFIG.LANES) {
+      if (gridX < 0 || gridX >= LAYOUT.COLUMNS || 
+          gridY < 0 || gridY >= LAYOUT.LANES) {
         return null;
       }
       
       return { x: gridX, y: gridY };
     }
 
-    function getLaneFromY(pixelY) {
-      const lane = Math.floor((pixelY - GRID_CONFIG.OFFSET_Y) / GRID_CONFIG.CELL_HEIGHT);
-      return (lane >= 0 && lane < GRID_CONFIG.LANES) ? lane : null;
-    }
-
     function canPlacePlant(gridX, gridY, grid) {
-      if (gridX < 0 || gridX >= GRID_CONFIG.COLUMNS ||
-          gridY < 0 || gridY >= GRID_CONFIG.LANES) {
+      if (gridX < 0 || gridX >= LAYOUT.COLUMNS ||
+          gridY < 0 || gridY >= LAYOUT.LANES) {
         return false;
       }
       return grid[gridY][gridX] === null;
+    }
+
+    // Responsive scaling
+    function calculateScale(canvas) {
+      const windowWidth = window.innerWidth;
+      const windowHeight = window.innerHeight;
+      
+      const scaleX = windowWidth / DESIGN_WIDTH;
+      const scaleY = windowHeight / DESIGN_HEIGHT;
+      const scale = Math.min(scaleX, scaleY);
+      
+      const offsetX = (windowWidth - DESIGN_WIDTH * scale) / 2;
+      const offsetY = (windowHeight - DESIGN_HEIGHT * scale) / 2;
+      
+      return { scale, offsetX, offsetY };
     }
   </script>
 
@@ -156,7 +204,8 @@
         const entity = { 
           id: this.nextId++, 
           type, 
-          active: true 
+          active: true,
+          animationFrame: 0
         };
         this.entities.set(entity.id, entity);
         
@@ -194,48 +243,72 @@
     };
   </script>
 
+  <!-- PARTICLE SYSTEM -->
+  <script>
+    const ParticleSystem = {
+      particles: [],
+      
+      createHitParticles(x, y, color, count = 6) {
+        for (let i = 0; i < count; i++) {
+          this.particles.push({
+            x, y,
+            vx: (Math.random() - 0.5) * 120,
+            vy: (Math.random() - 0.5) * 120 - 60,
+            life: 1,
+            maxLife: 0.5 + Math.random() * 0.5,
+            color,
+            size: 3 + Math.random() * 5
+          });
+        }
+      },
+      
+      createZombieDeathParticles(x, y) {
+        this.createHitParticles(x, y, COLORS.zombie.skin, 12);
+        this.createHitParticles(x, y, COLORS.zombie.suit, 8);
+      },
+      
+      update(deltaTime) {
+        for (let i = this.particles.length - 1; i >= 0; i--) {
+          const p = this.particles[i];
+          p.x += p.vx * deltaTime / 1000;
+          p.y += p.vy * deltaTime / 1000;
+          p.vy += 300 * deltaTime / 1000; // Gravity
+          p.life -= deltaTime / (p.maxLife * 1000);
+          
+          if (p.life <= 0) {
+            this.particles.splice(i, 1);
+          }
+        }
+      },
+      
+      draw(ctx) {
+        for (const p of this.particles) {
+          ctx.globalAlpha = p.life;
+          ctx.fillStyle = p.color;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+      }
+    };
+  </script>
+
   <!-- PLANT SYSTEM -->
   <script>
     function createPlant(typeId, gridX, gridY, grid) {
       const type = PLANT_TYPES[typeId];
-      if (!type) {
-        console.error('Unknown plant type:', typeId);
-        return null;
-      }
+      if (!type) return null;
 
       const pos = gridToPixel(gridX, gridY);
-      
       const plant = EntityManager.create('plant');
       
-      plant.transform = {
-        x: pos.x,
-        y: pos.y,
-        width: type.width,
-        height: type.height
-      };
-      
-      plant.health = {
-        current: type.health,
-        max: type.health
-      };
-      
-      plant.plant = {
-        type: typeId,
-        gridX: gridX,
-        gridY: gridY,
-        cooldown: type.cooldown,
-        lastShot: 0
-      };
-      
-      plant.render = {
-        color: type.color,
-        radius: type.radius,
-        shape: 'circle',
-        flashTime: 0
-      };
+      plant.transform = { x: pos.x, y: pos.y, width: type.width, height: type.height };
+      plant.health = { current: type.health, max: type.health };
+      plant.plant = { type: typeId, gridX, gridY, cooldown: type.cooldown, lastShot: 0 };
+      plant.render = { flashTime: 0 };
       
       grid[gridY][gridX] = plant;
-      
       return plant;
     }
 
@@ -249,16 +322,13 @@
       return false;
     }
 
-    function updatePlants(currentTime) {
+    function updatePlants(currentTime, deltaTime) {
       for (const plant of EntityManager.getByType('plant')) {
         if (!plant.active) continue;
         
-        // Update flash effect
-        if (plant.render.flashTime > 0) {
-          plant.render.flashTime -= 16;
-        }
+        plant.animationFrame += deltaTime * 0.06;
+        if (plant.render.flashTime > 0) plant.render.flashTime -= deltaTime;
         
-        // Check if can shoot
         if (currentTime - plant.plant.lastShot >= plant.plant.cooldown) {
           if (hasZombieInLane(plant.plant.gridY, plant.transform.x)) {
             shootProjectile(plant);
@@ -268,43 +338,191 @@
       }
     }
 
+    // Detailed Peashooter Drawing
+    function drawPeashooterBackLeaves(ctx) {
+      const c = COLORS.peashooter;
+      ctx.fillStyle = c.leaf;
+      
+      ctx.beginPath();
+      ctx.ellipse(-18, 22, 14, 20, -0.6, 0, Math.PI * 2);
+      ctx.fill();
+      
+      ctx.beginPath();
+      ctx.ellipse(16, 20, 12, 17, 0.6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    function drawPeashooterStem(ctx) {
+      const c = COLORS.peashooter;
+      ctx.strokeStyle = c.stem;
+      ctx.lineWidth = 14;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(0, 22);
+      ctx.quadraticCurveTo(-6, 0, 0, -28);
+      ctx.stroke();
+      
+      ctx.strokeStyle = c.bodyLight;
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.moveTo(-4, 20);
+      ctx.quadraticCurveTo(-9, 0, -4, -26);
+      ctx.stroke();
+    }
+
+    function drawPeashooterHead(ctx, isFlashing) {
+      const c = COLORS.peashooter;
+      const x = 0, y = -38;
+      
+      // Back of head
+      ctx.fillStyle = isFlashing ? '#fff' : c.bodyDark;
+      ctx.beginPath();
+      ctx.ellipse(x, y, 20, 24, 0, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Mouth interior (dark hole)
+      ctx.fillStyle = c.mouthDark;
+      ctx.beginPath();
+      ctx.ellipse(x + 14, y, 11, 16, 0, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Main head with gradient
+      const grad = ctx.createLinearGradient(x - 18, y - 25, x + 18, y + 20);
+      grad.addColorStop(0, isFlashing ? '#fff' : c.bodyDark);
+      grad.addColorStop(0.5, isFlashing ? '#fff' : c.bodyMain);
+      grad.addColorStop(1, isFlashing ? '#fff' : c.bodyLight);
+      
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.ellipse(x, y, 22, 27, 0, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Mouth lip
+      ctx.fillStyle = isFlashing ? '#fff' : c.head;
+      ctx.beginPath();
+      ctx.ellipse(x + 14, y, 13, 18, 0, 0, Math.PI * 2);
+      ctx.fill();
+      
+      ctx.fillStyle = c.mouth;
+      ctx.beginPath();
+      ctx.ellipse(x + 16, y, 9, 13, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    function drawPeashooterFace(ctx, isFlashing) {
+      const c = COLORS.peashooter;
+      
+      // Eyes
+      ctx.fillStyle = c.eyeWhite;
+      ctx.beginPath();
+      ctx.ellipse(-6, -45, 7, 9, -0.2, 0, Math.PI * 2);
+      ctx.ellipse(8, -47, 7, 9, 0.2, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Pupils (looking right at zombies)
+      ctx.fillStyle = c.eyePupil;
+      ctx.beginPath();
+      ctx.arc(-3, -45, 3.5, 0, Math.PI * 2);
+      ctx.arc(11, -47, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Eye shine
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(-5, -47, 2, 0, Math.PI * 2);
+      ctx.arc(9, -49, 2, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Cheeks
+      if (!isFlashing) {
+        ctx.fillStyle = c.cheek;
+        ctx.globalAlpha = 0.4;
+        ctx.beginPath();
+        ctx.arc(-14, -35, 6, 0, Math.PI * 2);
+        ctx.arc(16, -37, 6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+      
+      // Eyebrows
+      ctx.strokeStyle = isFlashing ? '#999' : c.bodyDark;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(-12, -54);
+      ctx.lineTo(-2, -51);
+      ctx.moveTo(3, -53);
+      ctx.lineTo(13, -56);
+      ctx.stroke();
+    }
+
+    function drawPeashooterFrontLeaves(ctx) {
+      const c = COLORS.peashooter;
+      ctx.fillStyle = c.leafLight;
+      
+      ctx.beginPath();
+      ctx.ellipse(0, 24, 16, 22, 0, 0, Math.PI * 2);
+      ctx.fill();
+      
+      ctx.strokeStyle = c.leaf;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(0, 8);
+      ctx.lineTo(0, 40);
+      ctx.moveTo(0, 22);
+      ctx.lineTo(-10, 16);
+      ctx.moveTo(0, 22);
+      ctx.lineTo(10, 16);
+      ctx.moveTo(0, 30);
+      ctx.lineTo(-10, 36);
+      ctx.moveTo(0, 30);
+      ctx.lineTo(10, 36);
+      ctx.stroke();
+    }
+
+    function drawPeashooter(ctx, x, y, animFrame, isFlashing) {
+      ctx.save();
+      ctx.translate(x, y);
+      
+      // Idle bob
+      const bob = Math.sin(animFrame * 0.08) * 2;
+      ctx.translate(0, bob);
+      
+      drawPeashooterBackLeaves(ctx);
+      drawPeashooterStem(ctx);
+      drawPeashooterHead(ctx, isFlashing);
+      drawPeashooterFace(ctx, isFlashing);
+      drawPeashooterFrontLeaves(ctx);
+      
+      ctx.restore();
+    }
+
+    function drawShadow(ctx, x, y, width) {
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+      ctx.beginPath();
+      ctx.ellipse(x, y + 28, width / 2, width / 5, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
     function drawPlant(ctx, plant) {
       if (!plant.active) return;
       
       const { x, y } = plant.transform;
-      const { color, radius } = plant.render;
+      const isFlashing = plant.render.flashTime > 0;
       
-      // Flash white if damaged
-      if (plant.render.flashTime > 0) {
-        ctx.fillStyle = '#ffffff';
-      } else {
-        ctx.fillStyle = color;
-      }
+      // Shadow
+      drawShadow(ctx, x, y, 50);
       
-      ctx.beginPath();
-      ctx.arc(x, y, radius, 0, Math.PI * 2);
-      ctx.fill();
-      
-      // Draw a simple "face" to show it's a plant
-      ctx.fillStyle = '#1b5e20';
-      ctx.beginPath();
-      ctx.arc(x - 8, y - 5, 4, 0, Math.PI * 2);
-      ctx.arc(x + 8, y - 5, 4, 0, Math.PI * 2);
-      ctx.fill();
-      
-      // Mouth
-      ctx.strokeStyle = '#1b5e20';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(x, y + 5, 8, 0, Math.PI);
-      ctx.stroke();
+      // Peashooter
+      drawPeashooter(ctx, x, y, plant.animationFrame, isFlashing);
       
       // Health bar
       const healthPct = plant.health.current / plant.health.max;
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-      ctx.fillRect(x - 20, y - radius - 12, 40, 6);
-      ctx.fillStyle = healthPct > 0.5 ? '#4caf50' : '#f44336';
-      ctx.fillRect(x - 20, y - radius - 12, 40 * healthPct, 6);
+      if (healthPct < 1) {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+        ctx.fillRect(x - 18, y - 55, 36, 7);
+        ctx.fillStyle = healthPct > 0.5 ? '#4caf50' : '#f44336';
+        ctx.fillRect(x - 17, y - 54, 34 * healthPct, 5);
+      }
     }
   </script>
 
@@ -312,46 +530,20 @@
   <script>
     function createProjectile(typeId, x, y, lane) {
       const type = PROJECTILE_TYPES[typeId];
-      if (!type) {
-        console.error('Unknown projectile type:', typeId);
-        return null;
-      }
+      if (!type) return null;
       
       const projectile = EntityManager.create('projectile');
-      
-      projectile.transform = {
-        x: x,
-        y: y,
-        width: type.radius * 2,
-        height: type.radius * 2
-      };
-      
-      projectile.projectile = {
-        type: typeId,
-        lane: lane,
-        speed: type.speed,
-        damage: type.damage
-      };
-      
-      projectile.render = {
-        color: type.color,
-        radius: type.radius,
-        shape: 'circle'
-      };
+      projectile.transform = { x, y, width: type.radius * 2, height: type.radius * 2 };
+      projectile.projectile = { type: typeId, lane, speed: type.speed, damage: type.damage };
+      projectile.render = { radius: type.radius };
       
       return projectile;
     }
 
     function shootProjectile(plant) {
       const type = PLANT_TYPES[plant.plant.type];
-      if (!type || !type.projectile) return;
-      
-      createProjectile(
-        type.projectile,
-        plant.transform.x + 25,
-        plant.transform.y,
-        plant.plant.gridY
-      );
+      if (!type?.projectile) return;
+      createProjectile(type.projectile, plant.transform.x + 20, plant.transform.y - 5, plant.plant.gridY);
     }
 
     function checkProjectileCollision(projectile) {
@@ -360,38 +552,26 @@
       const projRadius = projectile.render.radius;
       
       for (const zombie of EntityManager.getByType('zombie')) {
-        if (!zombie.active) continue;
-        if (zombie.zombie.lane !== lane) continue;
-        if (zombie.zombie.state === ZOMBIE_STATES.DYING) continue;
+        if (!zombie.active || zombie.zombie.lane !== lane || zombie.zombie.state === ZOMBIE_STATES.DYING) continue;
         
-        const zombieX = zombie.transform.x;
-        const zombieRadius = zombie.render.radius || 20;
-        
-        const distance = Math.abs(projX - zombieX);
-        if (distance < projRadius + zombieRadius) {
-          return zombie;
-        }
+        const distance = Math.abs(projX - zombie.transform.x);
+        if (distance < projRadius + 22) return zombie;
       }
-      
       return null;
     }
 
-    function updateProjectiles(deltaTime, canvasWidth) {
+    function updateProjectiles(deltaTime, maxX) {
       for (const projectile of EntityManager.getByType('projectile')) {
         if (!projectile.active) continue;
         
-        // Move right
         projectile.transform.x += projectile.projectile.speed * (deltaTime / 1000);
         
-        // Check collision with zombies
         const hitZombie = checkProjectileCollision(projectile);
-        
         if (hitZombie) {
           damageEntity(hitZombie, projectile.projectile.damage);
+          ParticleSystem.createHitParticles(projectile.transform.x, projectile.transform.y, COLORS.pea.main, 4);
           EntityManager.destroy(projectile);
-        }
-        // Remove if off screen
-        else if (projectile.transform.x > canvasWidth) {
+        } else if (projectile.transform.x > maxX) {
           EntityManager.destroy(projectile);
         }
       }
@@ -401,18 +581,44 @@
       if (!projectile.active) return;
       
       const { x, y } = projectile.transform;
-      const { color, radius } = projectile.render;
+      const c = COLORS.pea;
       
-      ctx.fillStyle = color;
+      ctx.save();
+      ctx.translate(x, y);
+      
+      // Motion blur trail
+      const trailGrad = ctx.createLinearGradient(-22, 0, -5, 0);
+      trailGrad.addColorStop(0, 'rgba(118, 255, 3, 0)');
+      trailGrad.addColorStop(1, 'rgba(118, 255, 3, 0.6)');
+      ctx.fillStyle = trailGrad;
       ctx.beginPath();
-      ctx.arc(x, y, radius, 0, Math.PI * 2);
+      ctx.ellipse(-12, 0, 16, 7, 0, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Outer glow
+      ctx.fillStyle = c.glow;
+      ctx.beginPath();
+      ctx.arc(0, 0, 12, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Main sphere
+      const peaGrad = ctx.createRadialGradient(-3, -3, 2, 0, 0, 9);
+      peaGrad.addColorStop(0, c.core);
+      peaGrad.addColorStop(0.6, c.main);
+      peaGrad.addColorStop(1, c.shadow);
+      
+      ctx.fillStyle = peaGrad;
+      ctx.beginPath();
+      ctx.arc(0, 0, 9, 0, Math.PI * 2);
       ctx.fill();
       
       // Highlight
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
       ctx.beginPath();
-      ctx.arc(x - 2, y - 2, radius / 2, 0, Math.PI * 2);
+      ctx.arc(-3, -3, 3.5, 0, Math.PI * 2);
       ctx.fill();
+      
+      ctx.restore();
     }
   </script>
 
@@ -420,46 +626,20 @@
   <script>
     function createZombie(typeId, lane) {
       const type = ZOMBIE_TYPES[typeId];
-      if (!type) {
-        console.error('Unknown zombie type:', typeId);
-        return null;
-      }
+      if (!type) return null;
 
-      const startX = GRID_CONFIG.OFFSET_X + GRID_CONFIG.COLUMNS * GRID_CONFIG.CELL_WIDTH + 50;
-      const startY = GRID_CONFIG.OFFSET_Y + lane * GRID_CONFIG.CELL_HEIGHT + GRID_CONFIG.CELL_HEIGHT / 2;
+      const startX = LAYOUT.UI_LEFT_MARGIN + LAYOUT.COLUMNS * LAYOUT.CELL_WIDTH + 60;
+      const startY = LAYOUT.UI_TOP_MARGIN + lane * LAYOUT.CELL_HEIGHT + LAYOUT.CELL_HEIGHT / 2;
       
       const zombie = EntityManager.create('zombie');
-      
-      zombie.transform = {
-        x: startX,
-        y: startY,
-        width: type.width,
-        height: type.height
-      };
-      
-      zombie.health = {
-        current: type.health,
-        max: type.health
-      };
-      
+      zombie.transform = { x: startX, y: startY, width: type.width, height: type.height };
+      zombie.health = { current: type.health, max: type.health };
       zombie.zombie = {
-        type: typeId,
-        lane: lane,
-        state: ZOMBIE_STATES.WALKING,
-        speed: type.speed,
-        damage: type.damage,
-        eatCooldown: type.eatCooldown,
-        lastBite: 0,
-        targetPlant: null,
-        deathTime: 0
+        type: typeId, lane, state: ZOMBIE_STATES.WALKING,
+        speed: type.speed, damage: type.damage, eatCooldown: type.eatCooldown,
+        lastBite: 0, targetPlant: null, deathTime: 0
       };
-      
-      zombie.render = {
-        color: type.color,
-        radius: 20,
-        shape: 'rect',
-        flashTime: 0
-      };
+      zombie.render = { flashTime: 0 };
       
       return zombie;
     }
@@ -467,20 +647,15 @@
     function getPlantInFront(zombie, grid) {
       const lane = zombie.zombie.lane;
       const zombieX = zombie.transform.x;
+      const col = Math.floor((zombieX - LAYOUT.UI_LEFT_MARGIN) / LAYOUT.CELL_WIDTH);
       
-      const col = Math.floor((zombieX - GRID_CONFIG.OFFSET_X) / GRID_CONFIG.CELL_WIDTH);
-      
-      if (col >= 0 && col < GRID_CONFIG.COLUMNS) {
+      if (col >= 0 && col < LAYOUT.COLUMNS) {
         const plant = grid[lane][col];
-        if (plant && plant.active) {
+        if (plant?.active) {
           const plantPos = gridToPixel(col, lane);
-          const distance = Math.abs(zombieX - plantPos.x);
-          if (distance < 30) {
-            return plant;
-          }
+          if (Math.abs(zombieX - plantPos.x) < 30) return plant;
         }
       }
-      
       return null;
     }
 
@@ -493,10 +668,7 @@
         zombie.zombie.lastBite = currentTime;
       } else {
         zombie.transform.x -= zombie.zombie.speed * (deltaTime / 1000);
-        
-        if (zombie.transform.x < GRID_CONFIG.OFFSET_X - 50) {
-          onGameOver();
-        }
+        if (zombie.transform.x < LAYOUT.UI_LEFT_MARGIN - 60) onGameOver();
       }
     }
 
@@ -517,13 +689,9 @@
 
     function updateZombieDying(zombie, currentTime) {
       const elapsed = currentTime - zombie.zombie.deathTime;
-      const duration = 500;
-      
-      if (elapsed >= duration) {
+      if (elapsed >= 500) {
+        ParticleSystem.createZombieDeathParticles(zombie.transform.x, zombie.transform.y);
         EntityManager.destroy(zombie);
-      } else {
-        const progress = elapsed / duration;
-        zombie.render.radius = 20 * (1 - progress);
       }
     }
 
@@ -531,10 +699,8 @@
       for (const zombie of EntityManager.getByType('zombie')) {
         if (!zombie.active) continue;
         
-        // Update flash effect
-        if (zombie.render.flashTime > 0) {
-          zombie.render.flashTime -= deltaTime;
-        }
+        zombie.animationFrame += deltaTime * 0.06;
+        if (zombie.render.flashTime > 0) zombie.render.flashTime -= deltaTime;
         
         switch (zombie.zombie.state) {
           case ZOMBIE_STATES.WALKING:
@@ -550,62 +716,268 @@
       }
     }
 
+    // Detailed Zombie Drawing
+    function drawZombieLegs(ctx, animFrame, isFlashing) {
+      const c = COLORS.zombie;
+      const walkCycle = Math.sin(animFrame * 0.15);
+      
+      // Left leg
+      ctx.fillStyle = isFlashing ? '#fff' : c.pants;
+      ctx.save();
+      ctx.translate(-12, 32);
+      ctx.rotate(walkCycle * 0.25);
+      ctx.fillRect(-9, 0, 18, 42);
+      ctx.fillStyle = '#212121';
+      ctx.fillRect(-11, 38, 22, 10);
+      ctx.restore();
+      
+      // Right leg
+      ctx.fillStyle = isFlashing ? '#fff' : c.pants;
+      ctx.save();
+      ctx.translate(12, 32);
+      ctx.rotate(-walkCycle * 0.25);
+      ctx.fillRect(-9, 0, 18, 42);
+      ctx.fillStyle = '#212121';
+      ctx.fillRect(-11, 38, 22, 10);
+      ctx.restore();
+    }
+
+    function drawZombieBody(ctx, isFlashing) {
+      const c = COLORS.zombie;
+      
+      const bodyGrad = ctx.createLinearGradient(-22, -20, 22, 20);
+      bodyGrad.addColorStop(0, isFlashing ? '#fff' : c.suitDark);
+      bodyGrad.addColorStop(0.5, isFlashing ? '#fff' : c.suit);
+      bodyGrad.addColorStop(1, isFlashing ? '#fff' : c.suitLight);
+      
+      ctx.fillStyle = bodyGrad;
+      ctx.beginPath();
+      ctx.roundRect(-24, -12, 48, 48, 6);
+      ctx.fill();
+      
+      // Shirt
+      ctx.fillStyle = c.shirt;
+      ctx.beginPath();
+      ctx.moveTo(-12, -12);
+      ctx.lineTo(12, -12);
+      ctx.lineTo(0, 18);
+      ctx.closePath();
+      ctx.fill();
+      
+      // Lapels
+      ctx.fillStyle = isFlashing ? '#ddd' : c.suitDark;
+      ctx.beginPath();
+      ctx.moveTo(-24, -12);
+      ctx.lineTo(-6, 18);
+      ctx.lineTo(-24, 22);
+      ctx.closePath();
+      ctx.fill();
+      
+      ctx.beginPath();
+      ctx.moveTo(24, -12);
+      ctx.lineTo(6, 18);
+      ctx.lineTo(24, 22);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    function drawZombieTie(ctx) {
+      const c = COLORS.zombie;
+      ctx.fillStyle = c.tie;
+      ctx.beginPath();
+      ctx.moveTo(-6, -10);
+      ctx.lineTo(6, -10);
+      ctx.lineTo(4, 6);
+      ctx.lineTo(0, 28);
+      ctx.lineTo(-4, 6);
+      ctx.closePath();
+      ctx.fill();
+      
+      ctx.fillStyle = c.tieDark;
+      ctx.beginPath();
+      ctx.moveTo(0, -10);
+      ctx.lineTo(4, 6);
+      ctx.lineTo(0, 28);
+      ctx.lineTo(-1, 6);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    function drawZombieHead(ctx, animFrame, isFlashing) {
+      const c = COLORS.zombie;
+      const headBob = Math.sin(animFrame * 0.1) * 2;
+      
+      ctx.save();
+      ctx.translate(0, -38 + headBob);
+      
+      const headGrad = ctx.createRadialGradient(-12, -18, 5, 0, 0, 38);
+      headGrad.addColorStop(0, isFlashing ? '#fff' : c.skinHighlight);
+      headGrad.addColorStop(0.5, isFlashing ? '#fff' : c.skin);
+      headGrad.addColorStop(1, isFlashing ? '#ddd' : c.skinShadow);
+      
+      ctx.fillStyle = headGrad;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 30, 34, 0, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Hair
+      ctx.fillStyle = '#424242';
+      for (let i = 0; i < 8; i++) {
+        const angle = -Math.PI / 2 + (i - 4) * 0.35;
+        ctx.beginPath();
+        ctx.arc(Math.cos(angle) * 26, Math.sin(angle) * 30, 7, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      
+      // Eyes
+      drawZombieEyes(ctx, isFlashing);
+      
+      // Nose
+      ctx.fillStyle = isFlashing ? '#ddd' : c.skinShadow;
+      ctx.beginPath();
+      ctx.ellipse(-6, 10, 5, 7, 0.3, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Mouth
+      drawZombieMouth(ctx);
+      
+      ctx.restore();
+    }
+
+    function drawZombieEyes(ctx, isFlashing) {
+      const c = COLORS.zombie;
+      
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+      ctx.beginPath();
+      ctx.ellipse(-12, -6, 11, 13, 0, 0, Math.PI * 2);
+      ctx.ellipse(12, -6, 11, 13, 0, 0, Math.PI * 2);
+      ctx.fill();
+      
+      ctx.fillStyle = c.eyeWhite;
+      ctx.beginPath();
+      ctx.ellipse(-12, -6, 8, 10, 0, 0, Math.PI * 2);
+      ctx.ellipse(12, -6, 8, 10, 0, 0, Math.PI * 2);
+      ctx.fill();
+      
+      ctx.fillStyle = c.eyePupil;
+      ctx.beginPath();
+      ctx.arc(-15, -6, 3.5, 0, Math.PI * 2);
+      ctx.arc(9, -6, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    function drawZombieMouth(ctx) {
+      const c = COLORS.zombie;
+      ctx.fillStyle = c.mouth;
+      ctx.beginPath();
+      ctx.ellipse(-6, 22, 14, 9, 0, 0, Math.PI * 2);
+      ctx.fill();
+      
+      ctx.fillStyle = c.teeth;
+      for (let i = 0; i < 4; i++) {
+        ctx.fillRect(-14 + i * 7, 17, 5, 6);
+        ctx.fillRect(-14 + i * 7, 24, 5, 5);
+      }
+      
+      ctx.fillStyle = '#5d1010';
+      ctx.beginPath();
+      ctx.ellipse(-6, 24, 7, 3.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    function drawZombieArms(ctx, animFrame, state, isFlashing) {
+      const c = COLORS.zombie;
+      const swing = Math.sin(animFrame * 0.15);
+      
+      // Back arm
+      ctx.save();
+      ctx.translate(-22, 0);
+      ctx.rotate(swing * 0.3 + Math.PI);
+      ctx.fillStyle = isFlashing ? '#fff' : c.suit;
+      ctx.fillRect(-9, 0, 18, 38);
+      ctx.fillStyle = isFlashing ? '#fff' : c.skin;
+      ctx.beginPath();
+      ctx.ellipse(0, 42, 9, 11, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+      
+      // Front arm
+      let rotation = swing * 0.3;
+      if (state === ZOMBIE_STATES.EATING) rotation = -0.9;
+      
+      ctx.save();
+      ctx.translate(22, 0);
+      ctx.rotate(rotation);
+      ctx.fillStyle = isFlashing ? '#fff' : c.suit;
+      ctx.fillRect(-9, 0, 18, 22);
+      ctx.fillStyle = isFlashing ? '#ddd' : c.suitDark;
+      ctx.fillRect(-8, 20, 16, 20);
+      ctx.fillStyle = isFlashing ? '#fff' : c.skin;
+      ctx.beginPath();
+      ctx.ellipse(0, 44, 10, 12, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
     function drawZombie(ctx, zombie) {
       if (!zombie.active) return;
       
       const { x, y } = zombie.transform;
-      const { color } = zombie.render;
+      const isFlashing = zombie.render.flashTime > 0;
+      const isDying = zombie.zombie.state === ZOMBIE_STATES.DYING;
       
-      // Flash white if damaged
-      if (zombie.render.flashTime > 0) {
-        ctx.fillStyle = '#ffffff';
-      } else {
-        ctx.fillStyle = color;
+      ctx.save();
+      ctx.translate(x, y);
+      
+      if (isDying) {
+        const elapsed = performance.now() - zombie.zombie.deathTime;
+        const progress = elapsed / 500;
+        ctx.globalAlpha = 1 - progress;
+        ctx.translate(0, progress * 30);
+        ctx.rotate(progress * 0.5);
       }
       
-      // Body
-      ctx.fillRect(x - 20, y - 35, 40, 70);
+      if (zombie.zombie.state === ZOMBIE_STATES.EATING) {
+        ctx.rotate(0.12);
+        ctx.translate(6, 0);
+      }
       
-      // Suit details
-      ctx.fillStyle = zombie.render.flashTime > 0 ? '#ffffff' : '#424242';
-      ctx.fillRect(x - 20, y + 10, 40, 25);
+      const bob = zombie.zombie.state === ZOMBIE_STATES.WALKING 
+        ? Math.abs(Math.sin(zombie.animationFrame * 0.15)) * 3 
+        : 0;
+      ctx.translate(0, bob);
       
-      // Tie
-      ctx.fillStyle = zombie.render.flashTime > 0 ? '#ffffff' : '#d32f2f';
-      ctx.fillRect(x - 5, y + 10, 10, 20);
+      // Shadow
+      drawShadow(ctx, 0, 0, 55);
       
-      // Eyes (looking left)
-      ctx.fillStyle = '#fff';
-      ctx.fillRect(x - 15, y - 20, 10, 10);
-      ctx.fillRect(x - 15, y, 10, 10);
-      ctx.fillStyle = '#000';
-      ctx.fillRect(x - 13, y - 18, 4, 4);
-      ctx.fillRect(x - 13, y + 2, 4, 4);
+      drawZombieArms(ctx, zombie.animationFrame, zombie.zombie.state, isFlashing);
+      drawZombieLegs(ctx, zombie.animationFrame, isFlashing);
+      drawZombieBody(ctx, isFlashing);
+      drawZombieTie(ctx);
+      drawZombieHead(ctx, zombie.animationFrame, isFlashing);
+      
+      ctx.restore();
       
       // Health bar
       const healthPct = zombie.health.current / zombie.health.max;
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-      ctx.fillRect(x - 20, y - 45, 40, 6);
-      ctx.fillStyle = healthPct > 0.5 ? '#4caf50' : '#f44336';
-      ctx.fillRect(x - 20, y - 45, 40 * healthPct, 6);
+      if (healthPct < 1 && !isDying) {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+        ctx.fillRect(x - 22, y - 65, 44, 7);
+        ctx.fillStyle = healthPct > 0.5 ? '#4caf50' : '#f44336';
+        ctx.fillRect(x - 21, y - 64, 42 * healthPct, 5);
+      }
     }
   </script>
 
   <!-- COMBAT SYSTEM -->
   <script>
     function damageEntity(entity, amount) {
-      if (!entity || !entity.active) return;
+      if (!entity?.active) return;
       
       entity.health.current -= amount;
+      if (entity.render) entity.render.flashTime = 120;
       
-      // Visual flash
-      if (entity.render) {
-        entity.render.flashTime = 100; // ms
-      }
-      
-      if (entity.health.current <= 0) {
-        killEntity(entity);
-      }
+      if (entity.health.current <= 0) killEntity(entity);
     }
 
     function killEntity(entity) {
@@ -615,11 +987,6 @@
         entity.zombie.state = ZOMBIE_STATES.DYING;
         entity.zombie.deathTime = performance.now();
       } else if (entity.type === 'plant') {
-        // Clear from grid
-        const gridY = entity.plant.gridY;
-        const gridX = entity.plant.gridX;
-        
-        // We need access to grid - this will be handled by checking in the game loop
         EntityManager.destroy(entity);
       }
     }
@@ -628,24 +995,15 @@
   <!-- SPAWNER -->
   <script>
     const Spawner = {
-      spawnInterval: 4000,
+      spawnInterval: 4500,
       lastSpawn: 0,
-      
       update(currentTime) {
         if (currentTime - this.lastSpawn >= this.spawnInterval) {
-          this.spawnZombie();
+          createZombie('BASIC', Math.floor(Math.random() * LAYOUT.LANES));
           this.lastSpawn = currentTime;
         }
       },
-      
-      spawnZombie() {
-        const lane = Math.floor(Math.random() * GRID_CONFIG.LANES);
-        createZombie('BASIC', lane);
-      },
-
-      reset() {
-        this.lastSpawn = 0;
-      }
+      reset() { this.lastSpawn = 0; }
     };
   </script>
 
@@ -655,28 +1013,34 @@
       selectedPlant: null,
       mouseX: 0,
       mouseY: 0,
-      seedPacketBounds: { x: 20, y: 20, width: 80, height: 100 },
       
       init(canvas) {
         this.canvas = canvas;
         canvas.addEventListener('click', (e) => this.handleClick(e));
         canvas.addEventListener('mousemove', (e) => this.handleMouseMove(e));
+        window.addEventListener('resize', () => Game.handleResize());
       },
       
       handleClick(e) {
         const rect = this.canvas.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
+        const scaleData = calculateScale(this.canvas);
         
-        // Check if clicking seed packet
-        if (this.isInSeedPacket(x, y)) {
-          this.selectedPlant = 'PEASHOOTER';
+        const screenX = e.clientX - rect.left;
+        const screenY = e.clientY - rect.top;
+        
+        // Convert to design coordinates
+        const designX = (screenX - scaleData.offsetX) / scaleData.scale;
+        const designY = (screenY - scaleData.offsetY) / scaleData.scale;
+        
+        // Check seed packet
+        if (designX >= 15 && designX <= 85 && designY >= 10 && designY <= 100) {
+          this.selectedPlant = this.selectedPlant ? null : 'PEASHOOTER';
           return;
         }
         
-        // Try to place plant
-        if (this.selectedPlant) {
-          const gridPos = pixelToGrid(x, y);
+        // Place plant
+        if (this.selectedPlant && !Game.gameOver && !Game.victory) {
+          const gridPos = pixelToGrid(designX, designY);
           if (gridPos && canPlacePlant(gridPos.x, gridPos.y, Game.grid)) {
             createPlant(this.selectedPlant, gridPos.x, gridPos.y, Game.grid);
           }
@@ -685,100 +1049,231 @@
       
       handleMouseMove(e) {
         const rect = this.canvas.getBoundingClientRect();
-        this.mouseX = e.clientX - rect.left;
-        this.mouseY = e.clientY - rect.top;
-      },
-
-      isInSeedPacket(x, y) {
-        const b = this.seedPacketBounds;
-        return x >= b.x && x <= b.x + b.width &&
-               y >= b.y && y <= b.y + b.height;
-      },
-
-      getMouseGridPos() {
-        return pixelToGrid(this.mouseX, this.mouseY);
+        const scaleData = calculateScale(this.canvas);
+        
+        this.mouseX = (e.clientX - rect.left - scaleData.offsetX) / scaleData.scale;
+        this.mouseY = (e.clientY - rect.top - scaleData.offsetY) / scaleData.scale;
       }
     };
   </script>
 
-  <!-- RENDERER -->
+  <!-- BACKGROUND RENDERER -->
   <script>
-    function drawBackground(ctx) {
-      // Sky
-      ctx.fillStyle = '#87ceeb';
-      ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+    function drawSky(ctx) {
+      const grad = ctx.createLinearGradient(0, 0, 0, DESIGN_HEIGHT);
+      grad.addColorStop(0, COLORS.sky.top);
+      grad.addColorStop(0.6, COLORS.sky.middle);
+      grad.addColorStop(1, COLORS.sky.bottom);
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, DESIGN_WIDTH, DESIGN_HEIGHT);
+    }
+
+    function drawHouse(ctx) {
+      const c = COLORS.house;
+      const hx = 15, hy = 110, hw = 145, hh = 380;
       
-      // Grass lawn
-      ctx.fillStyle = '#7cb342';
-      ctx.fillRect(
-        GRID_CONFIG.OFFSET_X,
-        GRID_CONFIG.OFFSET_Y,
-        GRID_CONFIG.COLUMNS * GRID_CONFIG.CELL_WIDTH,
-        GRID_CONFIG.LANES * GRID_CONFIG.CELL_HEIGHT
-      );
+      // Wall with siding
+      ctx.fillStyle = c.wall;
+      ctx.fillRect(hx, hy, hw, hh);
+      
+      ctx.strokeStyle = c.wallShadow;
+      ctx.lineWidth = 1;
+      for (let i = 1; i < 13; i++) {
+        const y = hy + i * 30;
+        ctx.beginPath();
+        ctx.moveTo(hx, y);
+        ctx.lineTo(hx + hw, y);
+        ctx.stroke();
+      }
+      
+      // Roof
+      ctx.fillStyle = c.roof;
+      ctx.beginPath();
+      ctx.moveTo(hx - 12, hy);
+      ctx.lineTo(hx + hw / 2, hy - 65);
+      ctx.lineTo(hx + hw + 12, hy);
+      ctx.closePath();
+      ctx.fill();
+      
+      ctx.fillStyle = c.roofHighlight;
+      ctx.beginPath();
+      ctx.moveTo(hx + 18, hy - 12);
+      ctx.lineTo(hx + hw / 2, hy - 55);
+      ctx.lineTo(hx + hw - 18, hy - 12);
+      ctx.closePath();
+      ctx.fill();
+      
+      // Windows
+      for (let lane = 0; lane < 5; lane++) {
+        const wy = hy + 28 + lane * 75;
+        ctx.fillStyle = c.trim;
+        ctx.fillRect(hx + 22, wy, 42, 55);
+        
+        const wGrad = ctx.createLinearGradient(hx + 27, wy + 5, hx + 59, wy + 50);
+        wGrad.addColorStop(0, c.windowLight);
+        wGrad.addColorStop(1, c.window);
+        ctx.fillStyle = wGrad;
+        ctx.fillRect(hx + 27, wy + 5, 32, 45);
+        
+        ctx.strokeStyle = c.trim;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(hx + 43, wy + 5);
+        ctx.lineTo(hx + 43, wy + 50);
+        ctx.moveTo(hx + 27, wy + 27);
+        ctx.lineTo(hx + 59, wy + 27);
+        ctx.stroke();
+      }
+      
+      // Door
+      ctx.fillStyle = c.door;
+      ctx.fillRect(hx + 85, hy + 295, 52, 85);
+      
+      ctx.strokeStyle = c.wallShadow;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(hx + 90, hy + 300, 20, 35);
+      ctx.strokeRect(hx + 112, hy + 300, 20, 35);
+      ctx.strokeRect(hx + 90, hy + 340, 20, 35);
+      ctx.strokeRect(hx + 112, hy + 340, 20, 35);
+      
+      ctx.fillStyle = c.doorKnob;
+      ctx.beginPath();
+      ctx.arc(hx + 130, hy + 338, 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    function drawFence(ctx) {
+      const fx = LAYOUT.UI_LEFT_MARGIN - 60;
+      const fy = LAYOUT.UI_TOP_MARGIN - 25;
+      const fw = LAYOUT.COLUMNS * LAYOUT.CELL_WIDTH + 120;
+      
+      ctx.fillStyle = '#a1887f';
+      for (let x = fx; x < fx + fw; x += 45) {
+        ctx.fillRect(x, fy - 32, 13, 55);
+        ctx.beginPath();
+        ctx.moveTo(x - 3, fy - 32);
+        ctx.lineTo(x + 6.5, fy - 48);
+        ctx.lineTo(x + 16, fy - 32);
+        ctx.closePath();
+        ctx.fill();
+      }
+      
+      ctx.fillStyle = '#8d6e63';
+      ctx.fillRect(fx, fy - 12, fw, 9);
+      ctx.fillRect(fx, fy + 10, fw, 9);
+    }
+
+    function drawLawn(ctx) {
+      const c = COLORS.lawn;
+      const lx = LAYOUT.UI_LEFT_MARGIN;
+      const ly = LAYOUT.UI_TOP_MARGIN;
+      const lw = LAYOUT.COLUMNS * LAYOUT.CELL_WIDTH;
+      const lh = LAYOUT.LANES * LAYOUT.CELL_HEIGHT;
+      
+      const grassGrad = ctx.createLinearGradient(0, ly, 0, ly + lh);
+      grassGrad.addColorStop(0, c.light);
+      grassGrad.addColorStop(1, c.dark);
+      ctx.fillStyle = grassGrad;
+      ctx.fillRect(lx, ly, lw, lh);
+      
+      // Grass blades
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(lx, ly, lw, lh);
+      ctx.clip();
+      
+      ctx.strokeStyle = c.highlight;
+      ctx.lineWidth = 2;
+      for (let i = 0; i < 250; i++) {
+        const gx = lx + Math.random() * lw;
+        const gy = ly + Math.random() * lh;
+        const h = 6 + Math.random() * 12;
+        const lean = (Math.random() - 0.5) * 5;
+        ctx.beginPath();
+        ctx.moveTo(gx, gy);
+        ctx.quadraticCurveTo(gx + lean, gy - h / 2, gx + lean * 2, gy - h);
+        ctx.stroke();
+      }
+      ctx.restore();
       
       // Grid lines
-      ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.06)';
       ctx.lineWidth = 1;
-      
-      // Vertical lines
-      for (let i = 0; i <= GRID_CONFIG.COLUMNS; i++) {
-        const x = GRID_CONFIG.OFFSET_X + i * GRID_CONFIG.CELL_WIDTH;
+      for (let i = 0; i <= LAYOUT.COLUMNS; i++) {
+        const x = lx + i * LAYOUT.CELL_WIDTH;
         ctx.beginPath();
-        ctx.moveTo(x, GRID_CONFIG.OFFSET_Y);
-        ctx.lineTo(x, GRID_CONFIG.OFFSET_Y + GRID_CONFIG.LANES * GRID_CONFIG.CELL_HEIGHT);
+        ctx.moveTo(x, ly);
+        ctx.lineTo(x, ly + lh);
         ctx.stroke();
       }
-      
-      // Horizontal lines
-      for (let i = 0; i <= GRID_CONFIG.LANES; i++) {
-        const y = GRID_CONFIG.OFFSET_Y + i * GRID_CONFIG.CELL_HEIGHT;
+      for (let i = 0; i <= LAYOUT.LANES; i++) {
+        const y = ly + i * LAYOUT.CELL_HEIGHT;
         ctx.beginPath();
-        ctx.moveTo(GRID_CONFIG.OFFSET_X, y);
-        ctx.lineTo(GRID_CONFIG.OFFSET_X + GRID_CONFIG.COLUMNS * GRID_CONFIG.CELL_WIDTH, y);
+        ctx.moveTo(lx, y);
+        ctx.lineTo(lx + lw, y);
         ctx.stroke();
-      }
-      
-      // House area (left of grid)
-      ctx.fillStyle = '#5d4037';
-      ctx.fillRect(0, GRID_CONFIG.OFFSET_Y, GRID_CONFIG.OFFSET_X - 10, GRID_CONFIG.LANES * GRID_CONFIG.CELL_HEIGHT);
-      
-      // House detail
-      ctx.fillStyle = '#8d6e63';
-      for (let i = 0; i < GRID_CONFIG.LANES; i++) {
-        const y = GRID_CONFIG.OFFSET_Y + i * GRID_CONFIG.CELL_HEIGHT + 20;
-        ctx.fillRect(20, y, 60, 60);
       }
     }
 
-    function drawSeedPacket(ctx, selected) {
-      const b = InputHandler.seedPacketBounds;
+    function drawBackground(ctx) {
+      drawSky(ctx);
+      drawHouse(ctx);
+      drawLawn(ctx);
+      drawFence(ctx);
+    }
+  </script>
+
+  <!-- UI RENDERER -->
+  <script>
+    function drawSeedPacket(ctx, x, y, plantType, isSelected) {
+      const c = COLORS.ui;
+      const w = 70, h = 90;
       
-      // Packet background
-      ctx.fillStyle = selected ? '#ffeb3b' : '#8d6e63';
-      ctx.fillRect(b.x, b.y, b.width, b.height);
-      
-      // Border
-      ctx.strokeStyle = selected ? '#ff6f00' : '#5d4037';
-      ctx.lineWidth = 3;
-      ctx.strokeRect(b.x, b.y, b.width, b.height);
-      
-      // Plant icon (simple circle)
-      ctx.fillStyle = '#4caf50';
+      ctx.fillStyle = isSelected ? c.packetSelected : c.packetBg;
       ctx.beginPath();
-      ctx.arc(b.x + b.width / 2, b.y + 40, 20, 0, Math.PI * 2);
+      ctx.roundRect(x, y, w, h, 6);
       ctx.fill();
       
-      // Label
-      ctx.fillStyle = '#fff';
-      ctx.font = 'bold 12px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText('PEA', b.x + b.width / 2, b.y + 80);
+      // 3D bevel
+      ctx.strokeStyle = c.packetHighlight;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(x + 2, y + h - 2);
+      ctx.lineTo(x + 2, y + 2);
+      ctx.lineTo(x + w - 2, y + 2);
+      ctx.stroke();
       
-      // Cost (free for v1.0)
-      ctx.fillStyle = '#ffeb3b';
-      ctx.font = 'bold 14px sans-serif';
-      ctx.fillText('FREE', b.x + b.width / 2, b.y + 95);
+      ctx.strokeStyle = c.packetBorder;
+      ctx.beginPath();
+      ctx.moveTo(x + w - 2, y + 2);
+      ctx.lineTo(x + w - 2, y + h - 2);
+      ctx.lineTo(x + 2, y + h - 2);
+      ctx.stroke();
+      
+      // Plant icon
+      ctx.save();
+      ctx.translate(x + w / 2, y + 32);
+      ctx.scale(0.5, 0.5);
+      drawPeashooter(ctx, 0, 0, 0, false);
+      ctx.restore();
+      
+      // Text
+      ctx.fillStyle = c.text;
+      ctx.font = 'bold 11px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(plantType.name.substring(0, 3).toUpperCase(), x + w / 2, y + 62);
+      
+      ctx.fillStyle = c.cost;
+      ctx.font = 'bold 13px sans-serif';
+      ctx.fillText(plantType.cost, x + w / 2, y + 80);
+      
+      if (isSelected) {
+        ctx.strokeStyle = '#ffeb3b';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.roundRect(x - 2, y - 2, w + 4, h + 4, 8);
+        ctx.stroke();
+      }
     }
 
     function drawPlacementGhost(ctx, mouseX, mouseY, selectedPlant, grid) {
@@ -790,45 +1285,43 @@
       const pos = gridToPixel(gridPos.x, gridPos.y);
       const valid = canPlacePlant(gridPos.x, gridPos.y, grid);
       
-      ctx.globalAlpha = 0.5;
-      ctx.fillStyle = valid ? '#4caf50' : '#f44336';
-      ctx.beginPath();
-      ctx.arc(pos.x, pos.y, 25, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.globalAlpha = 1.0;
+      ctx.save();
+      ctx.globalAlpha = 0.4;
+      drawPeashooter(ctx, pos.x, pos.y, 0, false);
+      ctx.restore();
       
-      // Highlight cell
-      ctx.strokeStyle = valid ? '#4caf50' : '#f44336';
-      ctx.lineWidth = 2;
+      ctx.strokeStyle = valid ? 'rgba(76, 175, 80, 0.8)' : 'rgba(244, 67, 54, 0.8)';
+      ctx.lineWidth = 3;
       ctx.strokeRect(
-        GRID_CONFIG.OFFSET_X + gridPos.x * GRID_CONFIG.CELL_WIDTH,
-        GRID_CONFIG.OFFSET_Y + gridPos.y * GRID_CONFIG.CELL_HEIGHT,
-        GRID_CONFIG.CELL_WIDTH,
-        GRID_CONFIG.CELL_HEIGHT
+        LAYOUT.UI_LEFT_MARGIN + gridPos.x * LAYOUT.CELL_WIDTH + 2,
+        LAYOUT.UI_TOP_MARGIN + gridPos.y * LAYOUT.CELL_HEIGHT + 2,
+        LAYOUT.CELL_WIDTH - 4,
+        LAYOUT.CELL_HEIGHT - 4
       );
     }
 
     function drawGameOver(ctx, won) {
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-      ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+      ctx.fillRect(0, 0, DESIGN_WIDTH, DESIGN_HEIGHT);
       
       ctx.fillStyle = '#fff';
-      ctx.font = 'bold 48px sans-serif';
+      ctx.font = 'bold 56px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       
       if (won) {
-        ctx.fillText('VICTORY!', ctx.canvas.width / 2, ctx.canvas.height / 2 - 30);
-        ctx.font = '24px sans-serif';
-        ctx.fillText('All zombies defeated!', ctx.canvas.width / 2, ctx.canvas.height / 2 + 20);
+        ctx.fillText('VICTORY!', DESIGN_WIDTH / 2, DESIGN_HEIGHT / 2 - 40);
+        ctx.font = '28px sans-serif';
+        ctx.fillText('All zombies defeated!', DESIGN_WIDTH / 2, DESIGN_HEIGHT / 2 + 15);
       } else {
-        ctx.fillText('GAME OVER', ctx.canvas.width / 2, ctx.canvas.height / 2 - 30);
-        ctx.font = '24px sans-serif';
-        ctx.fillText('Zombies ate your brains!', ctx.canvas.width / 2, ctx.canvas.height / 2 + 20);
+        ctx.fillText('GAME OVER', DESIGN_WIDTH / 2, DESIGN_HEIGHT / 2 - 40);
+        ctx.font = '28px sans-serif';
+        ctx.fillText('The zombies ate your brains!', DESIGN_WIDTH / 2, DESIGN_HEIGHT / 2 + 15);
       }
       
-      ctx.font = '18px sans-serif';
-      ctx.fillText('Click to restart', ctx.canvas.width / 2, ctx.canvas.height / 2 + 60);
+      ctx.font = '20px sans-serif';
+      ctx.fillStyle = '#ffeb3b';
+      ctx.fillText('Click anywhere to restart', DESIGN_WIDTH / 2, DESIGN_HEIGHT / 2 + 70);
     }
   </script>
 
@@ -842,37 +1335,34 @@
       gameOver: false,
       victory: false,
       zombieKillCount: 0,
-      victoryKills: 50, // Kill 50 zombies to win in v1.0
+      victoryKills: 50,
+      scale: 1,
+      offsetX: 0,
+      offsetY: 0,
       
       init() {
         this.canvas = document.getElementById('gameCanvas');
         this.ctx = this.canvas.getContext('2d');
         
-        // Initialize grid
+        this.handleResize();
         this.initGrid();
-        
-        // Initialize input
         InputHandler.init(this.canvas);
         
-        // Add click listener for restart
-        this.canvas.addEventListener('click', (e) => {
-          if (this.gameOver || this.victory) {
-            this.restart();
-          }
-        });
-        
-        // Start loop
+        document.getElementById('loading').style.display = 'none';
         requestAnimationFrame((t) => this.loop(t));
       },
       
+      handleResize() {
+        this.canvas.width = window.innerWidth;
+        this.canvas.height = window.innerHeight;
+        const scaleData = calculateScale(this.canvas);
+        this.scale = scaleData.scale;
+        this.offsetX = scaleData.offsetX;
+        this.offsetY = scaleData.offsetY;
+      },
+      
       initGrid() {
-        this.grid = [];
-        for (let y = 0; y < GRID_CONFIG.LANES; y++) {
-          this.grid[y] = [];
-          for (let x = 0; x < GRID_CONFIG.COLUMNS; x++) {
-            this.grid[y][x] = null;
-          }
-        }
+        this.grid = Array(LAYOUT.LANES).fill(null).map(() => Array(LAYOUT.COLUMNS).fill(null));
       },
       
       restart() {
@@ -886,13 +1376,8 @@
         InputHandler.selectedPlant = null;
       },
       
-      onGameOver() {
-        this.gameOver = true;
-      },
-
-      onVictory() {
-        this.victory = true;
-      },
+      onGameOver() { this.gameOver = true; },
+      onVictory() { this.victory = true; },
       
       loop(currentTime) {
         if (!this.lastTime) this.lastTime = currentTime;
@@ -900,32 +1385,28 @@
         this.lastTime = currentTime;
         
         if (!this.gameOver && !this.victory) {
-          // Update systems in dependency order
           updateZombies(deltaTime, currentTime, this.grid, () => this.onGameOver());
-          updatePlants(currentTime);
-          updateProjectiles(deltaTime, this.canvas.width);
+          updatePlants(currentTime, deltaTime);
+          updateProjectiles(deltaTime, DESIGN_WIDTH + 100);
           Spawner.update(currentTime);
-          
-          // Clean up dead plants from grid
+          ParticleSystem.update(deltaTime);
           this.cleanupGrid();
           
-          // Check victory condition
-          if (this.zombieKillCount >= this.victoryKills) {
-            this.onVictory();
-          }
+          if (this.zombieKillCount >= this.victoryKills) this.onVictory();
         }
         
-        // Render
-        this.render();
+        if ((this.gameOver || this.victory) && InputHandler.selectedPlant) {
+          InputHandler.selectedPlant = null;
+        }
         
+        this.render();
         requestAnimationFrame((t) => this.loop(t));
       },
       
       cleanupGrid() {
-        for (let y = 0; y < GRID_CONFIG.LANES; y++) {
-          for (let x = 0; x < GRID_CONFIG.COLUMNS; x++) {
-            const plant = this.grid[y][x];
-            if (plant && !plant.active) {
+        for (let y = 0; y < LAYOUT.LANES; y++) {
+          for (let x = 0; x < LAYOUT.COLUMNS; x++) {
+            if (this.grid[y][x] && !this.grid[y][x].active) {
               this.grid[y][x] = null;
             }
           }
@@ -935,58 +1416,82 @@
       render() {
         const ctx = this.ctx;
         
-        // Clear
-        ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        // Clear and setup scaling
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
         
-        // Background
+        ctx.save();
+        ctx.translate(this.offsetX, this.offsetY);
+        ctx.scale(this.scale, this.scale);
+        
+        // Draw game world at design resolution
         drawBackground(ctx);
         
-        // Seed packet
-        drawSeedPacket(ctx, InputHandler.selectedPlant === 'PEASHOOTER');
+        // UI elements in design coordinates
+        drawSeedPacket(ctx, 15, 10, PLANT_TYPES.PEASHOOTER, InputHandler.selectedPlant === 'PEASHOOTER');
         
-        // Plants
-        for (const plant of EntityManager.getByType('plant')) {
-          drawPlant(ctx, plant);
+        // Entities (sorted by Y for depth)
+        const allEntities = [
+          ...Array.from(EntityManager.getByType('plant')).map(e => ({...e, sortY: e.transform.y})),
+          ...Array.from(EntityManager.getByType('zombie')).map(e => ({...e, sortY: e.transform.y}))
+        ].sort((a, b) => a.sortY - b.sortY);
+        
+        for (const entity of allEntities) {
+          if (entity.type === 'plant') drawPlant(ctx, entity);
+          else drawZombie(ctx, entity);
         }
         
-        // Zombies
-        for (const zombie of EntityManager.getByType('zombie')) {
-          drawZombie(ctx, zombie);
+        // Projectiles on top
+        for (const proj of EntityManager.getByType('projectile')) {
+          drawProjectile(ctx, proj);
         }
         
-        // Projectiles
-        for (const projectile of EntityManager.getByType('projectile')) {
-          drawProjectile(ctx, projectile);
-        }
+        // Particles
+        ParticleSystem.draw(ctx);
         
         // Placement ghost
         drawPlacementGhost(ctx, InputHandler.mouseX, InputHandler.mouseY, InputHandler.selectedPlant, this.grid);
         
         // Stats
         ctx.fillStyle = '#fff';
-        ctx.font = 'bold 16px sans-serif';
+        ctx.font = 'bold 14px sans-serif';
         ctx.textAlign = 'left';
-        ctx.fillText(`Zombies killed: ${this.zombieKillCount}/${this.victoryKills}`, 120, 40);
-        ctx.fillText(`Plants: ${EntityManager.plants.size}`, 120, 65);
-        ctx.fillText(`Zombies: ${EntityManager.zombies.size}`, 120, 90);
+        ctx.fillText(`Kills: ${this.zombieKillCount}/${this.victoryKills}`, 100, 35);
+        ctx.fillText(`Plants: ${EntityManager.plants.size}`, 100, 55);
+        ctx.fillText(`Zombies: ${EntityManager.zombies.size}`, 100, 75);
         
-        // Game over screen
+        // Game over
         if (this.gameOver || this.victory) {
           drawGameOver(ctx, this.victory);
         }
+        
+        ctx.restore();
       }
     };
 
-    // Track zombie kills
+    // Track kills
     const originalDestroy = EntityManager.destroy;
     EntityManager.destroy = function(entity) {
-      if (entity && entity.type === 'zombie' && entity.active && entity.zombie?.state === ZOMBIE_STATES.DYING) {
+      if (entity?.type === 'zombie' && entity.active && entity.zombie?.state === ZOMBIE_STATES.DYING) {
         Game.zombieKillCount++;
       }
       originalDestroy.call(this, entity);
     };
 
-    // Start game when page loads
+    // Handle click for restart
+    window.addEventListener('click', (e) => {
+      if (Game.gameOver || Game.victory) {
+        const rect = Game.canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        // Check if click is within scaled game area
+        if (x >= Game.offsetX && x <= Game.offsetX + DESIGN_WIDTH * Game.scale &&
+            y >= Game.offsetY && y <= Game.offsetY + DESIGN_HEIGHT * Game.scale) {
+          Game.restart();
+        }
+      }
+    });
+
     window.onload = () => Game.init();
   </script>
 </body>
