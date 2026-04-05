@@ -160,6 +160,24 @@
       autoCollectTime: 6000
     };
 
+    const WAVE_CONFIG = [
+      { waveNumber: 1, type: 'normal', totalZombies: 1, composition: { basic: 1, conehead: 0, buckethead: 0 }, spawnDelay: 2000, preWaveDelay: 1000, lanePattern: 'center' },
+      { waveNumber: 2, type: 'normal', totalZombies: 3, composition: { basic: 3, conehead: 0, buckethead: 0 }, spawnDelay: 2500, preWaveDelay: 3000, lanePattern: 'random' },
+      { waveNumber: 3, type: 'normal', totalZombies: 5, composition: { basic: 5, conehead: 0, buckethead: 0 }, spawnDelay: 2200, preWaveDelay: 2000, lanePattern: 'random' },
+      { waveNumber: 4, type: 'normal', totalZombies: 7, composition: { basic: 7, conehead: 0, buckethead: 0 }, spawnDelay: 2000, preWaveDelay: 2000, lanePattern: 'random' },
+      { waveNumber: 5, type: 'boss', totalZombies: 15, composition: { basic: 15, conehead: 0, buckethead: 0 }, spawnDelay: 800, preWaveDelay: 5000, lanePattern: 'all', special: 'A HUGE WAVE OF ZOMBIES IS APPROACHING!' },
+      { waveNumber: 6, type: 'normal', totalZombies: 6, composition: { basic: 4, conehead: 2, buckethead: 0 }, spawnDelay: 2000, preWaveDelay: 3000, lanePattern: 'random' },
+      { waveNumber: 7, type: 'normal', totalZombies: 8, composition: { basic: 5, conehead: 3, buckethead: 0 }, spawnDelay: 1800, preWaveDelay: 2000, lanePattern: 'random' },
+      { waveNumber: 8, type: 'normal', totalZombies: 10, composition: { basic: 5, conehead: 5, buckethead: 0 }, spawnDelay: 1700, preWaveDelay: 2000, lanePattern: 'random' },
+      { waveNumber: 9, type: 'normal', totalZombies: 12, composition: { basic: 6, conehead: 6, buckethead: 0 }, spawnDelay: 1500, preWaveDelay: 2000, lanePattern: 'random' },
+      { waveNumber: 10, type: 'boss', totalZombies: 18, composition: { basic: 8, conehead: 10, buckethead: 0 }, spawnDelay: 700, preWaveDelay: 5000, lanePattern: 'all', special: 'A HUGE WAVE OF ZOMBIES IS APPROACHING!' },
+      { waveNumber: 11, type: 'normal', totalZombies: 10, composition: { basic: 5, conehead: 3, buckethead: 2 }, spawnDelay: 1800, preWaveDelay: 3000, lanePattern: 'random' },
+      { waveNumber: 12, type: 'normal', totalZombies: 12, composition: { basic: 5, conehead: 4, buckethead: 3 }, spawnDelay: 1600, preWaveDelay: 2000, lanePattern: 'random' },
+      { waveNumber: 13, type: 'normal', totalZombies: 14, composition: { basic: 5, conehead: 5, buckethead: 4 }, spawnDelay: 1400, preWaveDelay: 2000, lanePattern: 'random' },
+      { waveNumber: 14, type: 'normal', totalZombies: 16, composition: { basic: 5, conehead: 5, buckethead: 6 }, spawnDelay: 1200, preWaveDelay: 2000, lanePattern: 'random' },
+      { waveNumber: 15, type: 'boss', totalZombies: 25, composition: { basic: 10, conehead: 8, buckethead: 7 }, spawnDelay: 500, preWaveDelay: 8000, lanePattern: 'all', special: 'FINAL WAVE!' }
+    ];
+
     const PROJECTILE_TYPES = {
       PEA: {
         id: 'pea',
@@ -1576,45 +1594,191 @@
     }
   </script>
 
-  <!-- SPAWNER -->
+  <!-- WAVE SYSTEM -->
   <script>
-    const Spawner = {
-      spawnInterval: 4500,
-      lastSpawn: 0,
-      zombieSpawnCount: 0,
+    const WaveTracker = {
+      waveNumber: 0,
+      zombiesSpawned: 0,
+      zombiesKilled: 0,
+      zombiesOnField: 0,
+      spawnCounts: { basic: 0, conehead: 0, buckethead: 0 },
+      waveStartTime: 0,
+      lastSpawnTime: 0,
+      waveState: 'IDLE', // IDLE, SPAWNING, ACTIVE, COMPLETE
+      nextWaveTime: 0,
+      
+      reset() {
+        this.waveNumber = 0;
+        this.zombiesSpawned = 0;
+        this.zombiesKilled = 0;
+        this.zombiesOnField = 0;
+        this.spawnCounts = { basic: 0, conehead: 0, buckethead: 0 };
+        this.waveStartTime = 0;
+        this.lastSpawnTime = 0;
+        this.waveState = 'IDLE';
+        this.nextWaveTime = 0;
+      },
+      
+      onZombieSpawned(type) {
+        this.zombiesSpawned++;
+        this.zombiesOnField++;
+        this.spawnCounts[type.toLowerCase()]++;
+      },
+      
+      onZombieKilled() {
+        this.zombiesKilled++;
+        this.zombiesOnField--;
+      },
+      
+      getCurrentWaveConfig() {
+        if (this.waveNumber <= 0 || this.waveNumber > WAVE_CONFIG.length) return null;
+        return WAVE_CONFIG[this.waveNumber - 1];
+      },
+      
+      canProgressToNextWave() {
+        const config = this.getCurrentWaveConfig();
+        if (!config) return false;
+        
+        // Boss waves must be fully spawned first
+        if (config.type === 'boss' && this.zombiesSpawned < config.totalZombies) {
+          return false;
+        }
+        
+        // Normal waves: 50% threshold
+        if (this.zombiesSpawned === 0) return false;
+        const killRatio = this.zombiesKilled / this.zombiesSpawned;
+        return killRatio >= 0.5;
+      },
+      
+      isWaveFullySpawned() {
+        const config = this.getCurrentWaveConfig();
+        if (!config) return true;
+        return this.zombiesSpawned >= config.totalZombies;
+      }
+    };
+
+    const WaveSystem = {
+      NEXT_WAVE_THRESHOLD: 0.5,
+      
+      init() {
+        WaveTracker.reset();
+        this.startWave(1);
+      },
+      
+      reset() {
+        WaveTracker.reset();
+      },
+      
+      startWave(waveNum) {
+        if (waveNum > WAVE_CONFIG.length) {
+          Game.onVictory();
+          return;
+        }
+        
+        WaveTracker.waveNumber = waveNum;
+        WaveTracker.zombiesSpawned = 0;
+        WaveTracker.zombiesKilled = 0;
+        WaveTracker.spawnCounts = { basic: 0, conehead: 0, buckethead: 0 };
+        WaveTracker.waveState = 'IDLE';
+        
+        const config = WaveTracker.getCurrentWaveConfig();
+        WaveTracker.nextWaveTime = performance.now() + config.preWaveDelay;
+      },
       
       update(currentTime) {
-        if (currentTime - this.lastSpawn >= this.spawnInterval) {
-          this.spawnZombie();
-          this.lastSpawn = currentTime;
+        // Check if we should start spawning this wave
+        if (WaveTracker.waveState === 'IDLE') {
+          if (currentTime >= WaveTracker.nextWaveTime) {
+            WaveTracker.waveState = 'SPAWNING';
+            WaveTracker.waveStartTime = currentTime;
+            WaveTracker.lastSpawnTime = currentTime;
+          }
+          return;
+        }
+        
+        // Spawn zombies during SPAWNING state
+        if (WaveTracker.waveState === 'SPAWNING') {
+          this.handleSpawning(currentTime);
+        }
+        
+        // Check for wave progression
+        if (WaveTracker.waveState === 'ACTIVE' || WaveTracker.waveState === 'SPAWNING') {
+          if (WaveTracker.canProgressToNextWave()) {
+            this.startWave(WaveTracker.waveNumber + 1);
+          }
         }
       },
       
-      spawnZombie() {
-        const lane = Math.floor(Math.random() * LAYOUT.LANES);
-        this.zombieSpawnCount++;
+      handleSpawning(currentTime) {
+        const config = WaveTracker.getCurrentWaveConfig();
+        if (!config) return;
         
-        // Spawn pattern: mix of basic, conehead, and buckethead
-        const rand = Math.random();
-        let type = 'BASIC';
-        
-        // Every 5th zombie has a chance to be armored
-        if (this.zombieSpawnCount % 5 === 0) {
-          if (rand < 0.3) {
-            type = 'BUCKETHEAD';
-          } else if (rand < 0.7) {
-            type = 'CONEHEAD';
-          }
-        } else if (this.zombieSpawnCount % 3 === 0 && rand < 0.5) {
-          type = 'CONEHEAD';
+        // Check if wave is fully spawned
+        if (WaveTracker.zombiesSpawned >= config.totalZombies) {
+          WaveTracker.waveState = 'ACTIVE';
+          return;
         }
+        
+        // Check spawn timing
+        if (currentTime - WaveTracker.lastSpawnTime >= config.spawnDelay) {
+          this.spawnZombieForWave(config);
+          WaveTracker.lastSpawnTime = currentTime;
+        }
+      },
+      
+      spawnZombieForWave(config) {
+        // Select zombie type based on remaining composition
+        const type = this.selectZombieType(config);
+        
+        // Select lane based on pattern
+        const lane = this.selectLane(config.lanePattern, WaveTracker.zombiesSpawned, config.totalZombies);
         
         createZombie(type, lane);
+        WaveTracker.onZombieSpawned(type);
       },
       
-      reset() { 
-        this.lastSpawn = 0; 
-        this.zombieSpawnCount = 0;
+      selectZombieType(config) {
+        const remaining = {
+          basic: config.composition.basic - WaveTracker.spawnCounts.basic,
+          conehead: config.composition.conehead - WaveTracker.spawnCounts.conehead,
+          buckethead: config.composition.buckethead - WaveTracker.spawnCounts.buckethead
+        };
+        
+        const totalRemaining = remaining.basic + remaining.conehead + remaining.buckethead;
+        if (totalRemaining <= 0) return 'BASIC';
+        
+        const rand = Math.random() * totalRemaining;
+        
+        if (rand < remaining.buckethead) return 'BUCKETHEAD';
+        if (rand < remaining.buckethead + remaining.conehead) return 'CONEHEAD';
+        return 'BASIC';
+      },
+      
+      selectLane(pattern, spawnIndex, totalSpawns) {
+        switch (pattern) {
+          case 'center':
+            return 2; // Middle lane
+          case 'all':
+            // Distribute evenly across all lanes
+            return spawnIndex % LAYOUT.LANES;
+          case 'random':
+          default:
+            return Math.floor(Math.random() * LAYOUT.LANES);
+        }
+      },
+      
+      isBossWave() {
+        const config = WaveTracker.getCurrentWaveConfig();
+        return config && config.type === 'boss';
+      },
+      
+      getBossWaveProgress(currentTime) {
+        const config = WaveTracker.getCurrentWaveConfig();
+        if (!config || config.type !== 'boss') return 0;
+        
+        const elapsed = currentTime - WaveTracker.waveStartTime;
+        const warningDuration = 5000;
+        return Math.min(1, elapsed / warningDuration);
       }
     };
   </script>
@@ -2206,7 +2370,7 @@
       if (won) {
         ctx.fillText('VICTORY!', DESIGN_WIDTH / 2, DESIGN_HEIGHT / 2 - 40);
         ctx.font = '28px sans-serif';
-        ctx.fillText('All zombies defeated!', DESIGN_WIDTH / 2, DESIGN_HEIGHT / 2 + 15);
+        ctx.fillText('All waves survived!', DESIGN_WIDTH / 2, DESIGN_HEIGHT / 2 + 15);
       } else {
         ctx.fillText('GAME OVER', DESIGN_WIDTH / 2, DESIGN_HEIGHT / 2 - 40);
         ctx.font = '28px sans-serif';
@@ -2216,6 +2380,69 @@
       ctx.font = '20px sans-serif';
       ctx.fillStyle = '#ffeb3b';
       ctx.fillText('Click anywhere to restart', DESIGN_WIDTH / 2, DESIGN_HEIGHT / 2 + 70);
+    }
+
+    function drawWaveProgress(ctx) {
+      const barWidth = 200;
+      const barHeight = 20;
+      const x = DESIGN_WIDTH / 2 - barWidth / 2;
+      const y = 10;
+      
+      // Background
+      ctx.fillStyle = '#333';
+      ctx.fillRect(x, y, barWidth, barHeight);
+      
+      // Progress fill
+      const config = WaveTracker.getCurrentWaveConfig();
+      let progress = 0;
+      if (config) {
+        progress = WaveTracker.zombiesSpawned / config.totalZombies;
+      }
+      
+      ctx.fillStyle = WaveSystem.isBossWave() ? '#ff5722' : '#4caf50';
+      ctx.fillRect(x, y, barWidth * progress, barHeight);
+      
+      // Border
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x, y, barWidth, barHeight);
+      
+      // Wave number text
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 14px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`Wave ${WaveTracker.waveNumber}/15`, x + barWidth / 2, y + barHeight / 2 + 1);
+    }
+
+    function drawBossWaveWarning(ctx, currentTime) {
+      const config = WaveTracker.getCurrentWaveConfig();
+      if (!config || config.type !== 'boss' || !config.special) return;
+      
+      const elapsed = currentTime - WaveTracker.waveStartTime;
+      const warningDuration = 5000;
+      
+      if (elapsed > warningDuration) return;
+      
+      // Flashing effect
+      const flash = Math.sin(elapsed * 0.01) > 0;
+      const alpha = 1 - (elapsed / warningDuration);
+      
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      
+      // Red warning background
+      ctx.fillStyle = flash ? '#d32f2f' : '#b71c1c';
+      ctx.fillRect(0, DESIGN_HEIGHT / 2 - 50, DESIGN_WIDTH, 100);
+      
+      // Warning text
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 40px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(config.special, DESIGN_WIDTH / 2, DESIGN_HEIGHT / 2);
+      
+      ctx.restore();
     }
   </script>
 
@@ -2244,6 +2471,7 @@
         this.initGrid();
         InputHandler.init(this.canvas);
         SunSystem.init();
+        WaveSystem.init();
         
         document.getElementById('loading').style.display = 'none';
         requestAnimationFrame((t) => this.loop(t));
@@ -2265,7 +2493,7 @@
       restart() {
         EntityManager.clear();
         this.initGrid();
-        Spawner.reset();
+        WaveSystem.reset();
         SunSystem.reset();
         SeedPacketSystem.reset();
         this.gameOver = false;
@@ -2306,13 +2534,11 @@
           updateZombies(deltaTime, currentTime, this.grid, () => this.onGameOver());
           updatePlants(currentTime, deltaTime);
           updateProjectiles(deltaTime, DESIGN_WIDTH + 100);
-          Spawner.update(currentTime);
+          WaveSystem.update(currentTime);
           SunSystem.update(deltaTime, currentTime);
           SeedPacketSystem.update(currentTime);
           ParticleSystem.update(deltaTime);
           this.cleanupGrid();
-          
-          if (this.zombieKillCount >= this.victoryKills) this.onVictory();
         }
         
         if ((this.gameOver || this.victory) && InputHandler.selectedPlant) {
@@ -2392,6 +2618,10 @@
         // Placement ghost
         drawPlacementGhost(ctx, InputHandler.mouseX, InputHandler.mouseY, InputHandler.selectedPlant, this.grid);
         
+        // Wave UI
+        drawWaveProgress(ctx);
+        drawBossWaveWarning(ctx, currentTime);
+        
         // Game over
         if (this.gameOver || this.victory) {
           drawGameOver(ctx, this.victory);
@@ -2406,6 +2636,7 @@
     EntityManager.destroy = function(entity) {
       if (entity?.type === 'zombie' && entity.active && entity.zombie?.state === ZOMBIE_STATES.DYING) {
         Game.zombieKillCount++;
+        WaveTracker.onZombieKilled();
       }
       originalDestroy.call(this, entity);
     };
